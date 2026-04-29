@@ -2,6 +2,7 @@ package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.response.EquipmentResponse;
+import org.example.backend.dto.response.EquipmentSummaryResponse;
 import org.example.backend.service.EquipmentService;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,5 +18,10 @@ public class EquipmentController {
     @GetMapping
     public List<EquipmentResponse> getEquipments() {
         return equipmentService.getEquipments();
+    }
+
+    @GetMapping("/summary")
+    public EquipmentSummaryResponse getSummary() {
+        return equipmentService.getEquipmentSummary();
     }
 }
