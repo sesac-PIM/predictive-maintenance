@@ -10,6 +10,7 @@ public class EquipmentResponse {
 
     private Long equipmentId;
     private String plantName;
+    private String equipmentname;
     private String equipmentType;
     private String status;
 
@@ -17,6 +18,7 @@ public class EquipmentResponse {
         return EquipmentResponse.builder()
                 .equipmentId(e.getEquipmentId())
                 .plantName(e.getPlant().getPlantName())
+                .equipmentname(e.getEquipmentName())
                 .equipmentType(e.getEquipmentType().name())
                 .status(e.getStatus().name())
                 .build();

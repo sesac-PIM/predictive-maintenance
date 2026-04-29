@@ -36,4 +36,11 @@ public class EquipmentService {
                 dangerCount
         );
     }
+
+    // 상세조회 API ⭐ 이거 추가
+    public EquipmentResponse getEquipment(Long equipmentId) {
+        return equipmentRepository.findById(equipmentId)
+                .map(EquipmentResponse::from)
+                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
+    }
 }
