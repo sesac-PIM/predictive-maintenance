@@ -24,4 +24,9 @@ public class EquipmentController {
     public EquipmentSummaryResponse getSummary() {
         return equipmentService.getEquipmentSummary();
     }
+
+    @GetMapping("/{equipmentId}")
+    public EquipmentResponse getEquipment(@PathVariable Long equipmentId) {
+        return equipmentService.getEquipment(equipmentId);
+    }
 }

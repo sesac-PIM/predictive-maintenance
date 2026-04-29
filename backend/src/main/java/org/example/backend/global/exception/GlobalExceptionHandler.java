@@ -7,10 +7,13 @@ import org.springframework.web.bind.annotation.*;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalArgumentException() {
+    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException e) {
         return ResponseEntity
                 .status(404)
-                .body(ErrorResponse.of(ErrorCode.NOT_FOUND));
+                .body(new ErrorResponse(
+                        ErrorCode.NOT_FOUND.getCode(),
+                        e.getMessage()
+                ));
     }
 
     @ExceptionHandler(Exception.class)
