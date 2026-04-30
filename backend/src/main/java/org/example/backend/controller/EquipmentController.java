@@ -3,6 +3,7 @@ package org.example.backend.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.response.EquipmentResponse;
 import org.example.backend.dto.response.EquipmentSummaryResponse;
+import org.example.backend.dto.response.MotorSensorDataResponse;
 import org.example.backend.service.EquipmentService;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,5 +29,10 @@ public class EquipmentController {
     @GetMapping("/{equipmentId}")
     public EquipmentResponse getEquipment(@PathVariable Long equipmentId) {
         return equipmentService.getEquipment(equipmentId);
+    }
+
+    @GetMapping("/{equipmentId}/sensor-data")
+    public List<MotorSensorDataResponse> getSensorData(@PathVariable Long equipmentId) {
+        return equipmentService.getSensorData(equipmentId);
     }
 }
