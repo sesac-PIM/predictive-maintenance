@@ -1,5 +1,6 @@
 package org.example.backend.controller;
 
+import org.example.backend.dto.response.MotorSensorThresholdResponse;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.response.EquipmentResponse;
 import org.example.backend.dto.response.EquipmentSummaryResponse;
@@ -34,5 +35,10 @@ public class EquipmentController {
     @GetMapping("/{equipmentId}/sensor-data")
     public List<MotorSensorDataResponse> getSensorData(@PathVariable Long equipmentId) {
         return equipmentService.getSensorData(equipmentId);
+    }
+
+    @GetMapping("/{equipmentId}/sensor-thresholds")
+    public List<MotorSensorThresholdResponse> getSensorThresholds(@PathVariable Long equipmentId) {
+        return equipmentService.getSensorThresholds(1L);
     }
 }
