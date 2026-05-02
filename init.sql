@@ -1,16 +1,16 @@
--- 기존 테이블 삭제 (순서 중요)
-DROP TABLE IF EXISTS motor_anomaly_sensor_contribution;
-DROP TABLE IF EXISTS tube_anomaly_sensor_contribution;
-DROP TABLE IF EXISTS alert_history;
-DROP TABLE IF EXISTS motor_anomaly_result;
-DROP TABLE IF EXISTS tube_anomaly_result;
-DROP TABLE IF EXISTS anomaly_config;
-DROP TABLE IF EXISTS motor_sensor_data;
-DROP TABLE IF EXISTS tube_sensor_data;
-DROP TABLE IF EXISTS equipment;
-DROP TABLE IF EXISTS plant;
-
---------------------------------------------------
+-- 기존 테이블 삭제
+DROP TABLE IF EXISTS motor_anomaly_sensor_contribution CASCADE;
+DROP TABLE IF EXISTS tube_anomaly_sensor_contribution CASCADE;
+DROP TABLE IF EXISTS alert_history CASCADE;
+DROP TABLE IF EXISTS motor_anomaly_result CASCADE;
+DROP TABLE IF EXISTS tube_anomaly_result CASCADE;
+DROP TABLE IF EXISTS motor_sensor_threshold CASCADE;
+DROP TABLE IF EXISTS tube_sensor_threshold CASCADE;
+DROP TABLE IF EXISTS anomaly_config CASCADE;
+DROP TABLE IF EXISTS motor_sensor_data CASCADE;
+DROP TABLE IF EXISTS tube_sensor_data CASCADE;
+DROP TABLE IF EXISTS equipment CASCADE;
+DROP TABLE IF EXISTS plant CASCADE;
 
 -- 1. plant
 CREATE TABLE plant (
@@ -21,8 +21,6 @@ CREATE TABLE plant (
     longitude DOUBLE PRECISION,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
---------------------------------------------------
 
 -- 2. equipment
 CREATE TABLE equipment (
@@ -38,8 +36,6 @@ CREATE TABLE equipment (
     CONSTRAINT fk_equipment_plant
     FOREIGN KEY (plant_id) REFERENCES plant(plant_id)
 );
-
---------------------------------------------------
 
 -- 3. motor_sensor_data
 CREATE TABLE motor_sensor_data (
@@ -90,8 +86,6 @@ CREATE TABLE motor_sensor_data (
     FOREIGN KEY (equipment_id) REFERENCES equipment(equipment_id)
 );
 
---------------------------------------------------
-
 -- 4. tube_sensor_data
 CREATE TABLE tube_sensor_data (
     tube_sensor_data_id BIGSERIAL PRIMARY KEY,
@@ -112,8 +106,6 @@ CREATE TABLE tube_sensor_data (
     FOREIGN KEY (equipment_id) REFERENCES equipment(equipment_id)
 );
 
---------------------------------------------------
-
 -- 5. anomaly_config
 CREATE TABLE anomaly_config (
     config_id BIGSERIAL PRIMARY KEY,
@@ -125,9 +117,31 @@ CREATE TABLE anomaly_config (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
---------------------------------------------------
+-- 6. motor_sensor_threshold
+CREATE TABLE motor_sensor_threshold (
+    motor_sensor_threshold_id BIGSERIAL PRIMARY KEY,
+    config_id BIGINT NOT NULL,
+    sensor_tag VARCHAR(100) NOT NULL,
+    threshold DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
--- 6. motor_anomaly_result
+    CONSTRAINT fk_motor_threshold_config
+    FOREIGN KEY (config_id) REFERENCES anomaly_config(config_id)
+);
+
+-- 7. tube_sensor_threshold
+CREATE TABLE tube_sensor_threshold (
+    tube_sensor_threshold_id BIGSERIAL PRIMARY KEY,
+    config_id BIGINT NOT NULL,
+    sensor_tag VARCHAR(150) NOT NULL,
+    threshold DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_tube_threshold_config
+    FOREIGN KEY (config_id) REFERENCES anomaly_config(config_id)
+);
+
+-- 8. motor_anomaly_result
 CREATE TABLE motor_anomaly_result (
     motor_anomaly_result_id BIGSERIAL PRIMARY KEY,
     motor_sensor_data_id BIGINT NOT NULL,
@@ -137,17 +151,13 @@ CREATE TABLE motor_anomaly_result (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_motor_result_sensor
-    FOREIGN KEY (motor_sensor_data_id)
-    REFERENCES motor_sensor_data(motor_sensor_data_id),
+    FOREIGN KEY (motor_sensor_data_id) REFERENCES motor_sensor_data(motor_sensor_data_id),
 
     CONSTRAINT fk_motor_result_config
-    FOREIGN KEY (config_id)
-    REFERENCES anomaly_config(config_id)
+    FOREIGN KEY (config_id) REFERENCES anomaly_config(config_id)
 );
 
---------------------------------------------------
-
--- 7. tube_anomaly_result
+-- 9. tube_anomaly_result
 CREATE TABLE tube_anomaly_result (
     tube_anomaly_result_id BIGSERIAL PRIMARY KEY,
     tube_sensor_data_id BIGINT NOT NULL,
@@ -157,17 +167,13 @@ CREATE TABLE tube_anomaly_result (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_tube_result_sensor
-    FOREIGN KEY (tube_sensor_data_id)
-    REFERENCES tube_sensor_data(tube_sensor_data_id),
+    FOREIGN KEY (tube_sensor_data_id) REFERENCES tube_sensor_data(tube_sensor_data_id),
 
     CONSTRAINT fk_tube_result_config
-    FOREIGN KEY (config_id)
-    REFERENCES anomaly_config(config_id)
+    FOREIGN KEY (config_id) REFERENCES anomaly_config(config_id)
 );
 
---------------------------------------------------
-
--- 8. alert_history
+-- 10. alert_history
 CREATE TABLE alert_history (
     alert_id BIGSERIAL PRIMARY KEY,
     equipment_id BIGINT NOT NULL,
@@ -181,17 +187,14 @@ CREATE TABLE alert_history (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_alert_equipment
-    FOREIGN KEY (equipment_id)
-    REFERENCES equipment(equipment_id)
+    FOREIGN KEY (equipment_id) REFERENCES equipment(equipment_id)
 );
 
---------------------------------------------------
-
--- 9. sensor contribution (motor)
+-- 11. motor_anomaly_sensor_contribution
 CREATE TABLE motor_anomaly_sensor_contribution (
     motor_contribution_id BIGSERIAL PRIMARY KEY,
     motor_anomaly_result_id BIGINT NOT NULL,
-    sensor_name VARCHAR(100),
+    sensor_tag VARCHAR(100) NOT NULL,
     sensor_value DOUBLE PRECISION,
     contribution_score DOUBLE PRECISION,
     contribution_rank INT,
@@ -202,13 +205,11 @@ CREATE TABLE motor_anomaly_sensor_contribution (
     REFERENCES motor_anomaly_result(motor_anomaly_result_id)
 );
 
---------------------------------------------------
-
--- 10. sensor contribution (tube)
+-- 12. tube_anomaly_sensor_contribution
 CREATE TABLE tube_anomaly_sensor_contribution (
     tube_contribution_id BIGSERIAL PRIMARY KEY,
     tube_anomaly_result_id BIGINT NOT NULL,
-    sensor_name VARCHAR(100),
+    sensor_tag VARCHAR(150) NOT NULL,
     sensor_value DOUBLE PRECISION,
     contribution_score DOUBLE PRECISION,
     contribution_rank INT,
@@ -219,11 +220,51 @@ CREATE TABLE tube_anomaly_sensor_contribution (
     REFERENCES tube_anomaly_result(tube_anomaly_result_id)
 );
 
---------------------------------------------------
-
--- 인덱스 (성능 중요)
+-- 인덱스
 CREATE INDEX idx_motor_sensor_time ON motor_sensor_data(measured_at);
 CREATE INDEX idx_tube_sensor_time ON tube_sensor_data(measured_at);
-
 CREATE INDEX idx_motor_result_time ON motor_anomaly_result(measured_at);
 CREATE INDEX idx_tube_result_time ON tube_anomaly_result(measured_at);
+
+CREATE INDEX idx_motor_threshold_sensor_tag ON motor_sensor_threshold(sensor_tag);
+CREATE INDEX idx_tube_threshold_sensor_tag ON tube_sensor_threshold(sensor_tag);
+
+-- 기본 데이터
+INSERT INTO plant (plant_name, location, latitude, longitude)
+VALUES ('IGCC 발전소', '충남 태안', 36.745, 126.297);
+
+INSERT INTO equipment (
+    plant_id,
+    equipment_name,
+    equipment_type,
+    status,
+    status_updated_at,
+    description
+)
+VALUES
+(1, '고압전동기 A', 'MOTOR', 'NORMAL', CURRENT_TIMESTAMP, '고압전동기 이상징후 감지 대상 설비'),
+(1, 'IGCC 튜브 A', 'TUBE', 'NORMAL', CURRENT_TIMESTAMP, '튜브 누설 감지 대상 설비');
+
+INSERT INTO anomaly_config (
+    equipment_type,
+    model_version,
+    warning_threshold,
+    danger_threshold,
+    is_active
+)
+VALUES
+('MOTOR', 'motor-model-v1', 0.6, 0.8, TRUE),
+('TUBE', 'tube-model-v1', 0.6, 0.8, TRUE);
+
+-- 센서별 임계값 기본 예시
+INSERT INTO motor_sensor_threshold (config_id, sensor_tag, threshold)
+VALUES
+(1, 'ii1211a', 100),
+(1, 'tt1228a', 80),
+(1, 'yi1593aa', 50);
+
+INSERT INTO tube_sensor_threshold (config_id, sensor_tag, threshold)
+VALUES
+(2, 'tag_13tt0064', 500),
+(2, 'tag_15pdt0002a', 300),
+(2, 'bopc1_1_16200_fi_po041', 200);
