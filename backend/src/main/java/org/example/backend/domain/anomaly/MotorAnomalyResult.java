@@ -14,8 +14,6 @@ public class MotorAnomalyResult {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long motorAnomalyResultId;
 
-    private Long motorSensorDataId;
-
     private Long configId;
 
     private LocalDateTime measuredAt;
@@ -23,4 +21,10 @@ public class MotorAnomalyResult {
     private Double anomalyScore;
 
     private LocalDateTime createdAt;
+
+    private Long equipmentId;
+
+    private LocalDateTime windowStartAt;
+
+    private LocalDateTime windowEndAt;
 }
