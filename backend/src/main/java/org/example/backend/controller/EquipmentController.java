@@ -7,7 +7,7 @@ import org.example.backend.dto.response.EquipmentSummaryResponse;
 import org.example.backend.dto.response.MotorSensorDataResponse;
 import org.example.backend.service.EquipmentService;
 import org.springframework.web.bind.annotation.*;
-
+import org.example.backend.dto.response.MotorAnomalyResponse;
 import java.util.List;
 
 @RestController
@@ -40,5 +40,10 @@ public class EquipmentController {
     @GetMapping("/{equipmentId}/sensor-thresholds")
     public List<MotorSensorThresholdResponse> getSensorThresholds(@PathVariable Long equipmentId) {
         return equipmentService.getSensorThresholds(1L);
+    }
+
+    @GetMapping("/{equipmentId}/anomalies")
+    public List<MotorAnomalyResponse> getAnomalies(@PathVariable Long equipmentId) {
+        return equipmentService.getAnomalies(equipmentId);
     }
 }

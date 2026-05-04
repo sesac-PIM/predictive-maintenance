@@ -1,6 +1,11 @@
 package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.backend.domain.anomaly.MotorAnomalyResult;
+import org.example.backend.dto.response.MotorAnomalyResponse;
+import org.example.backend.repository.MotorAnomalyResultRepository;
+import org.example.backend.domain.anomaly.AnomalyConfig;
+import org.example.backend.repository.AnomalyConfigRepository;
 import org.example.backend.dto.response.EquipmentResponse;
 import org.example.backend.dto.response.EquipmentSummaryResponse;
 import org.example.backend.repository.EquipmentRepository;
@@ -18,6 +23,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class EquipmentService {
 
+    private final MotorAnomalyResultRepository motorAnomalyResultRepository;
+    private final AnomalyConfigRepository anomalyConfigRepository;
     private final MotorSensorThresholdRepository motorSensorThresholdRepository;
     private final EquipmentRepository equipmentRepository;
     private final MotorSensorDataRepository motorSensorDataRepository;
@@ -26,6 +33,16 @@ public class EquipmentService {
             "tt1228a", "NDE 베어링 온도",
             "yi1593aa", "NDE 진동 1"
     );
+    private String calculateSeverity(Double score, AnomalyConfig config) {
+
+        if (score >= config.getDangerThreshold()) {
+            return "DANGER";
+        } else if (score >= config.getWarningThreshold()) {
+            return "WARNING";
+        } else {
+            return "NORMAL";
+        }
+    }
     // 기존 API
     public List<EquipmentResponse> getEquipments() {
         return equipmentRepository.findAll()
@@ -89,6 +106,26 @@ public class EquipmentService {
                             threshold,
                             displayName
                     );
+                })
+                .toList();
+    }
+    public List<MotorAnomalyResponse> getAnomalies(Long equipmentId) {
+
+        List<MotorAnomalyResult> resultList =
+                motorAnomalyResultRepository.findByEquipmentId(equipmentId);
+
+        // 현재 active config (임시로 1번 사용)
+        AnomalyConfig config = anomalyConfigRepository.findById(1L)
+                .orElseThrow(IllegalArgumentException::new);
+
+        return resultList.stream()
+                .map(result -> {
+                    String severity = calculateSeverity(
+                            result.getAnomalyScore(),
+                            config
+                    );
+
+                    return MotorAnomalyResponse.from(result, severity);
                 })
                 .toList();
     }
