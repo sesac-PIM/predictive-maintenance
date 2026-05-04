@@ -44,7 +44,7 @@ public class EquipmentController {
     }
 
     @GetMapping("/{equipmentId}/anomalies")
-    public List<MotorAnomalyResponse> getAnomalies(@PathVariable Long equipmentId) {
+    public List<?> getAnomalies(@PathVariable Long equipmentId) {
         return equipmentService.getAnomalies(equipmentId);
     }
 

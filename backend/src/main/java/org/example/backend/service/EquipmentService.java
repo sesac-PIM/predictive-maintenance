@@ -12,6 +12,7 @@ import org.example.backend.dto.response.*;
 import org.example.backend.global.enums.EquipmentType;
 import org.example.backend.repository.*;
 import org.springframework.stereotype.Service;
+import org.example.backend.domain.anomaly.TubeAnomalyResult;
 
 import java.util.List;
 import java.util.Map;
@@ -27,7 +28,7 @@ public class EquipmentService {
     private final MotorAnomalyResultRepository motorAnomalyResultRepository;
     private final AnomalyConfigRepository anomalyConfigRepository;
     private final MotorAnomalySensorContributionRepository motorAnomalySensorContributionRepository;
-
+    private final TubeAnomalyResultRepository tubeAnomalyResultRepository;
     // -------------------------
     // sensorTag → displayName 매핑
     // -------------------------
@@ -148,26 +149,54 @@ public class EquipmentService {
     // -------------------------
     // anomaly 조회
     // -------------------------
-    public List<MotorAnomalyResponse> getAnomalies(Long equipmentId) {
+    /**
+     * 특정 설비의 이상 탐지 결과를 조회한다.
+     */
+    public List<?> getAnomalies(Long equipmentId) {
 
-        List<MotorAnomalyResult> resultList =
-                motorAnomalyResultRepository.findByEquipmentId(equipmentId);
+        Equipment equipment = equipmentRepository.findById(equipmentId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
 
-        return resultList.stream()
-                .map(result -> {
+        if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
 
-                    AnomalyConfig config = anomalyConfigRepository
-                            .findById(result.getConfigId())
-                            .orElseThrow(IllegalArgumentException::new);
+            List<MotorAnomalyResult> resultList =
+                    motorAnomalyResultRepository.findByEquipmentId(equipmentId);
 
-                    String severity = calculateSeverity(
-                            result.getAnomalyScore(),
-                            config
-                    );
+            return resultList.stream()
+                    .map(result -> {
+                        AnomalyConfig config = anomalyConfigRepository
+                                .findById(result.getConfigId())
+                                .orElseThrow(IllegalArgumentException::new);
 
-                    return MotorAnomalyResponse.from(result, severity);
-                })
-                .toList();
+                        String severity = calculateSeverity(
+                                result.getAnomalyScore(),
+                                config
+                        );
+
+                        return MotorAnomalyResponse.from(result, severity);
+                    })
+                    .toList();
+
+        } else {
+
+            List<TubeAnomalyResult> resultList =
+                    tubeAnomalyResultRepository.findByEquipmentId(equipmentId);
+
+            return resultList.stream()
+                    .map(result -> {
+                        AnomalyConfig config = anomalyConfigRepository
+                                .findById(result.getConfigId())
+                                .orElseThrow(IllegalArgumentException::new);
+
+                        String severity = calculateSeverity(
+                                result.getAnomalyScore(),
+                                config
+                        );
+
+                        return TubeAnomalyResponse.from(result, severity);
+                    })
+                    .toList();
+        }
     }
 
     /**
