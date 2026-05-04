@@ -10,7 +10,8 @@ public class MotorSensorThresholdResponse {
 
     private String sensorTag;
     private String displayName;
-    private Double threshold;
+    private Double lowerThreshold;
+    private Double upperThreshold;
 
     public static MotorSensorThresholdResponse from(
             MotorSensorThreshold threshold,
@@ -19,7 +20,8 @@ public class MotorSensorThresholdResponse {
         return MotorSensorThresholdResponse.builder()
                 .sensorTag(threshold.getSensorTag())
                 .displayName(displayName)
-                .threshold(threshold.getThreshold())
+                .lowerThreshold(threshold.getLowerThreshold())
+                .upperThreshold(threshold.getUpperThreshold())
                 .build();
     }
 }

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import org.example.backend.domain.anomaly.MotorAnomalySensorContribution;
 import org.example.backend.dto.response.MotorAnomalyContributionResponse;
 import org.example.backend.repository.MotorAnomalySensorContributionRepository;
-
+import org.example.backend.domain.equipment.Equipment;
 import java.util.List;
 import java.util.Map;
 
@@ -84,21 +84,26 @@ public class EquipmentService {
                 .toList();
     }
 
-    // -------------------------
-    // 5. 센서 임계값 조회
-    // -------------------------
+    /**
+     * 특정 설비의 센서 임계값 목록을 조회한다.
+     *
+     * @param equipmentId 설비 ID
+     * @return 센서 임계값 목록
+     */
     public List<MotorSensorThresholdResponse> getSensorThresholds(Long equipmentId) {
 
-        // 현재 active config (임시)
-        AnomalyConfig config = anomalyConfigRepository.findById(1L)
-                .orElseThrow(IllegalArgumentException::new);
+        Equipment equipment = equipmentRepository.findById(equipmentId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
+
+        AnomalyConfig config = anomalyConfigRepository
+                .findByEquipmentTypeAndIsActiveTrue(equipment.getEquipmentType())
+                .orElseThrow(() -> new IllegalArgumentException("활성화된 이상 판단 기준이 존재하지 않습니다."));
 
         List<MotorSensorThreshold> thresholdList =
                 motorSensorThresholdRepository.findByConfigId(config.getConfigId());
 
         return thresholdList.stream()
                 .map(threshold -> {
-
                     String displayName = sensorDisplayNameMap.getOrDefault(
                             threshold.getSensorTag(),
                             threshold.getSensorTag()
