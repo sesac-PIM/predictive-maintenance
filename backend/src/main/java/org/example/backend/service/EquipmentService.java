@@ -13,6 +13,9 @@ import org.example.backend.global.enums.EquipmentType;
 import org.example.backend.repository.*;
 import org.springframework.stereotype.Service;
 import org.example.backend.domain.anomaly.TubeAnomalyResult;
+import org.example.backend.domain.anomaly.TubeAnomalySensorContribution;
+import org.example.backend.dto.response.TubeAnomalyContributionResponse;
+import org.example.backend.repository.TubeAnomalySensorContributionRepository;
 
 import java.util.List;
 import java.util.Map;
@@ -29,6 +32,7 @@ public class EquipmentService {
     private final AnomalyConfigRepository anomalyConfigRepository;
     private final MotorAnomalySensorContributionRepository motorAnomalySensorContributionRepository;
     private final TubeAnomalyResultRepository tubeAnomalyResultRepository;
+    private final TubeAnomalySensorContributionRepository tubeAnomalySensorContributionRepository;
     // -------------------------
     // sensorTag → displayName 매핑
     // -------------------------
@@ -202,24 +206,80 @@ public class EquipmentService {
     /**
      * 특정 anomaly 결과에 대한 센서 기여도 목록 조회
      */
-    public List<MotorAnomalyContributionResponse> getContributions(Long anomalyResultId) {
+    public List<?> getContributions(Long anomalyResultId) {
 
-        List<MotorAnomalySensorContribution> contributions =
+        // MOTOR 먼저 조회
+        List<MotorAnomalySensorContribution> motorList =
                 motorAnomalySensorContributionRepository
                         .findByMotorAnomalyResultIdOrderByContributionRankAsc(anomalyResultId);
 
-        return contributions.stream()
-                .map(c -> {
+        if (!motorList.isEmpty()) {
 
+            return motorList.stream()
+                    .map(c -> {
+                        String displayName = sensorDisplayNameMap.getOrDefault(
+                                c.getSensorTag(),
+                                c.getSensorTag()
+                        );
+
+                        return MotorAnomalyContributionResponse.from(c, displayName);
+                    })
+                    .toList();
+        }
+
+        // 없으면 TUBE 조회
+        List<TubeAnomalySensorContribution> tubeList =
+                tubeAnomalySensorContributionRepository
+                        .findByTubeAnomalyResultIdOrderByContributionRankAsc(anomalyResultId);
+
+        return tubeList.stream()
+                .map(c -> {
                     String displayName = sensorDisplayNameMap.getOrDefault(
                             c.getSensorTag(),
                             c.getSensorTag()
                     );
 
-                    return MotorAnomalyContributionResponse.from(
-                            c,
-                            displayName
+                    return TubeAnomalyContributionResponse.from(c, displayName);
+                })
+                .toList();
+    }/**
+     * 특정 anomaly 결과에 대한 센서 기여도 목록 조회
+     */
+    public List<?> getContributions(Long equipmentId, Long anomalyResultId) {
+
+        Equipment equipment = equipmentRepository.findById(equipmentId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
+
+        if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
+
+            List<MotorAnomalySensorContribution> contributions =
+                    motorAnomalySensorContributionRepository
+                            .findByMotorAnomalyResultIdOrderByContributionRankAsc(anomalyResultId);
+
+            return contributions.stream()
+                    .map(c -> {
+                        String displayName = sensorDisplayNameMap.getOrDefault(
+                                c.getSensorTag(),
+                                c.getSensorTag()
+                        );
+
+                        return MotorAnomalyContributionResponse.from(c, displayName);
+                    })
+                    .toList();
+        }
+
+        List<TubeAnomalySensorContribution> contributions =
+                tubeAnomalySensorContributionRepository
+                        .findByTubeAnomalyResultIdOrderByContributionRankAsc(anomalyResultId);
+
+        return contributions.stream()
+                .map(c -> {
+                    String displayName = sensorDisplayNameMap.getOrDefault(
+                            c.getSensorTag(),
+                            c.getSensorTag()
                     );
+
+                    return TubeAnomalyContributionResponse.from(c, displayName);
                 })
                 .toList();
     }

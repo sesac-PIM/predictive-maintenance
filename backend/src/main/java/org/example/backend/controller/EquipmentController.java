@@ -49,10 +49,10 @@ public class EquipmentController {
     }
 
     @GetMapping("/{equipmentId}/anomalies/{anomalyResultId}/contributions")
-    public List<MotorAnomalyContributionResponse> getContributions(
+    public List<?> getContributions(
             @PathVariable Long equipmentId,
             @PathVariable Long anomalyResultId
     ) {
-        return equipmentService.getContributions(anomalyResultId);
+        return equipmentService.getContributions(equipmentId, anomalyResultId);
     }
 }
