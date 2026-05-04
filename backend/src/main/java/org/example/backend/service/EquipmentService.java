@@ -3,15 +3,16 @@ package org.example.backend.service;
 import lombok.RequiredArgsConstructor;
 import org.example.backend.domain.anomaly.AnomalyConfig;
 import org.example.backend.domain.anomaly.MotorAnomalyResult;
+import org.example.backend.domain.anomaly.MotorAnomalySensorContribution;
+import org.example.backend.domain.equipment.Equipment;
 import org.example.backend.domain.sensor.MotorSensorData;
 import org.example.backend.domain.sensor.MotorSensorThreshold;
+import org.example.backend.domain.sensor.TubeSensorData;
 import org.example.backend.dto.response.*;
+import org.example.backend.global.enums.EquipmentType;
 import org.example.backend.repository.*;
 import org.springframework.stereotype.Service;
-import org.example.backend.domain.anomaly.MotorAnomalySensorContribution;
-import org.example.backend.dto.response.MotorAnomalyContributionResponse;
-import org.example.backend.repository.MotorAnomalySensorContributionRepository;
-import org.example.backend.domain.equipment.Equipment;
+
 import java.util.List;
 import java.util.Map;
 
@@ -21,6 +22,7 @@ public class EquipmentService {
 
     private final EquipmentRepository equipmentRepository;
     private final MotorSensorDataRepository motorSensorDataRepository;
+    private final TubeSensorDataRepository tubeSensorDataRepository;
     private final MotorSensorThresholdRepository motorSensorThresholdRepository;
     private final MotorAnomalyResultRepository motorAnomalyResultRepository;
     private final AnomalyConfigRepository anomalyConfigRepository;
@@ -72,23 +74,35 @@ public class EquipmentService {
     }
 
     // -------------------------
-    // 4. 센서 데이터 조회
+    // 4. 센서 데이터 조회 (motor/tube 분기)
     // -------------------------
-    public List<MotorSensorDataResponse> getSensorData(Long equipmentId) {
+    public List<?> getSensorData(Long equipmentId) {
 
-        List<MotorSensorData> sensorDataList =
-                motorSensorDataRepository.findByEquipmentId(equipmentId);
+        Equipment equipment = equipmentRepository.findById(equipmentId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
 
-        return sensorDataList.stream()
-                .map(MotorSensorDataResponse::from)
-                .toList();
+        if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
+
+            List<MotorSensorData> sensorDataList =
+                    motorSensorDataRepository.findByEquipmentId(equipmentId);
+
+            return sensorDataList.stream()
+                    .map(MotorSensorDataResponse::from)
+                    .toList();
+
+        } else {
+
+            List<TubeSensorData> sensorDataList =
+                    tubeSensorDataRepository.findByEquipmentId(equipmentId);
+
+            return sensorDataList.stream()
+                    .map(TubeSensorDataResponse::from)
+                    .toList();
+        }
     }
 
     /**
      * 특정 설비의 센서 임계값 목록을 조회한다.
-     *
-     * @param equipmentId 설비 ID
-     * @return 센서 임계값 목록
      */
     public List<MotorSensorThresholdResponse> getSensorThresholds(Long equipmentId) {
 
@@ -118,7 +132,7 @@ public class EquipmentService {
     }
 
     // -------------------------
-    // 6. severity 계산
+    // severity 계산
     // -------------------------
     private String calculateSeverity(Double score, AnomalyConfig config) {
 
@@ -132,7 +146,7 @@ public class EquipmentService {
     }
 
     // -------------------------
-    // 7. anomaly 조회 (핵심)
+    // anomaly 조회
     // -------------------------
     public List<MotorAnomalyResponse> getAnomalies(Long equipmentId) {
 
@@ -155,11 +169,9 @@ public class EquipmentService {
                 })
                 .toList();
     }
+
     /**
-     * 특정 anomaly 결과에 대한 센서 기여도 목록을 조회한다.
-     *
-     * @param anomalyResultId anomaly 결과 ID
-     * @return 기여도 리스트
+     * 특정 anomaly 결과에 대한 센서 기여도 목록 조회
      */
     public List<MotorAnomalyContributionResponse> getContributions(Long anomalyResultId) {
 
