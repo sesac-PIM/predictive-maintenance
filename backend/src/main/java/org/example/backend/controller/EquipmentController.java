@@ -9,6 +9,7 @@ import org.example.backend.service.EquipmentService;
 import org.springframework.web.bind.annotation.*;
 import org.example.backend.dto.response.MotorAnomalyResponse;
 import java.util.List;
+import org.example.backend.dto.response.MotorAnomalyContributionResponse;
 
 @RestController
 @RequestMapping("/api/equipments")
@@ -45,5 +46,13 @@ public class EquipmentController {
     @GetMapping("/{equipmentId}/anomalies")
     public List<MotorAnomalyResponse> getAnomalies(@PathVariable Long equipmentId) {
         return equipmentService.getAnomalies(equipmentId);
+    }
+
+    @GetMapping("/{equipmentId}/anomalies/{anomalyResultId}/contributions")
+    public List<MotorAnomalyContributionResponse> getContributions(
+            @PathVariable Long equipmentId,
+            @PathVariable Long anomalyResultId
+    ) {
+        return equipmentService.getContributions(anomalyResultId);
     }
 }

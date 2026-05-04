@@ -8,6 +8,9 @@ import org.example.backend.domain.sensor.MotorSensorThreshold;
 import org.example.backend.dto.response.*;
 import org.example.backend.repository.*;
 import org.springframework.stereotype.Service;
+import org.example.backend.domain.anomaly.MotorAnomalySensorContribution;
+import org.example.backend.dto.response.MotorAnomalyContributionResponse;
+import org.example.backend.repository.MotorAnomalySensorContributionRepository;
 
 import java.util.List;
 import java.util.Map;
@@ -21,6 +24,7 @@ public class EquipmentService {
     private final MotorSensorThresholdRepository motorSensorThresholdRepository;
     private final MotorAnomalyResultRepository motorAnomalyResultRepository;
     private final AnomalyConfigRepository anomalyConfigRepository;
+    private final MotorAnomalySensorContributionRepository motorAnomalySensorContributionRepository;
 
     // -------------------------
     // sensorTag → displayName 매핑
@@ -143,6 +147,33 @@ public class EquipmentService {
                     );
 
                     return MotorAnomalyResponse.from(result, severity);
+                })
+                .toList();
+    }
+    /**
+     * 특정 anomaly 결과에 대한 센서 기여도 목록을 조회한다.
+     *
+     * @param anomalyResultId anomaly 결과 ID
+     * @return 기여도 리스트
+     */
+    public List<MotorAnomalyContributionResponse> getContributions(Long anomalyResultId) {
+
+        List<MotorAnomalySensorContribution> contributions =
+                motorAnomalySensorContributionRepository
+                        .findByMotorAnomalyResultIdOrderByContributionRankAsc(anomalyResultId);
+
+        return contributions.stream()
+                .map(c -> {
+
+                    String displayName = sensorDisplayNameMap.getOrDefault(
+                            c.getSensorTag(),
+                            c.getSensorTag()
+                    );
+
+                    return MotorAnomalyContributionResponse.from(
+                            c,
+                            displayName
+                    );
                 })
                 .toList();
     }
