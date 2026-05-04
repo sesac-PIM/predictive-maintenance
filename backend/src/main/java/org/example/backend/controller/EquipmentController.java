@@ -1,15 +1,11 @@
 package org.example.backend.controller;
 
-import org.example.backend.dto.response.MotorSensorThresholdResponse;
+import org.example.backend.dto.response.*;
 import lombok.RequiredArgsConstructor;
-import org.example.backend.dto.response.EquipmentResponse;
-import org.example.backend.dto.response.EquipmentSummaryResponse;
-import org.example.backend.dto.response.MotorSensorDataResponse;
 import org.example.backend.service.EquipmentService;
 import org.springframework.web.bind.annotation.*;
-import org.example.backend.dto.response.MotorAnomalyResponse;
+
 import java.util.List;
-import org.example.backend.dto.response.MotorAnomalyContributionResponse;
 
 @RestController
 @RequestMapping("/api/equipments")
@@ -39,7 +35,7 @@ public class EquipmentController {
     }
 
     @GetMapping("/{equipmentId}/sensor-thresholds")
-    public List<MotorSensorThresholdResponse> getSensorThresholds(@PathVariable Long equipmentId) {
+    public List<SensorThresholdResponse> getSensorThresholds(@PathVariable Long equipmentId) {
         return equipmentService.getSensorThresholds(equipmentId);
     }
 
