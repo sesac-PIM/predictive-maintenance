@@ -1,49 +1,39 @@
 package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
-import org.example.backend.domain.anomaly.MotorAnomalyResult;
-import org.example.backend.dto.response.MotorAnomalyResponse;
-import org.example.backend.repository.MotorAnomalyResultRepository;
 import org.example.backend.domain.anomaly.AnomalyConfig;
-import org.example.backend.repository.AnomalyConfigRepository;
-import org.example.backend.dto.response.EquipmentResponse;
-import org.example.backend.dto.response.EquipmentSummaryResponse;
-import org.example.backend.repository.EquipmentRepository;
-import org.springframework.stereotype.Service;
+import org.example.backend.domain.anomaly.MotorAnomalyResult;
 import org.example.backend.domain.sensor.MotorSensorData;
-import org.example.backend.dto.response.MotorSensorDataResponse;
-import org.example.backend.repository.MotorSensorDataRepository;
 import org.example.backend.domain.sensor.MotorSensorThreshold;
-import org.example.backend.dto.response.MotorSensorThresholdResponse;
-import org.example.backend.repository.MotorSensorThresholdRepository;
-import java.util.Map;
+import org.example.backend.dto.response.*;
+import org.example.backend.repository.*;
+import org.springframework.stereotype.Service;
+
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class EquipmentService {
 
-    private final MotorAnomalyResultRepository motorAnomalyResultRepository;
-    private final AnomalyConfigRepository anomalyConfigRepository;
-    private final MotorSensorThresholdRepository motorSensorThresholdRepository;
     private final EquipmentRepository equipmentRepository;
     private final MotorSensorDataRepository motorSensorDataRepository;
+    private final MotorSensorThresholdRepository motorSensorThresholdRepository;
+    private final MotorAnomalyResultRepository motorAnomalyResultRepository;
+    private final AnomalyConfigRepository anomalyConfigRepository;
+
+    // -------------------------
+    // sensorTag → displayName 매핑
+    // -------------------------
     private static final Map<String, String> sensorDisplayNameMap = Map.of(
             "ii1211a", "전류",
             "tt1228a", "NDE 베어링 온도",
             "yi1593aa", "NDE 진동 1"
     );
-    private String calculateSeverity(Double score, AnomalyConfig config) {
 
-        if (score >= config.getDangerThreshold()) {
-            return "DANGER";
-        } else if (score >= config.getWarningThreshold()) {
-            return "WARNING";
-        } else {
-            return "NORMAL";
-        }
-    }
-    // 기존 API
+    // -------------------------
+    // 1. 설비 전체 조회
+    // -------------------------
     public List<EquipmentResponse> getEquipments() {
         return equipmentRepository.findAll()
                 .stream()
@@ -51,7 +41,9 @@ public class EquipmentService {
                 .toList();
     }
 
-    // summary API
+    // -------------------------
+    // 2. 설비 상태 요약
+    // -------------------------
     public EquipmentSummaryResponse getEquipmentSummary() {
         long totalCount = equipmentRepository.countAll();
         long normalCount = equipmentRepository.countNormal();
@@ -66,13 +58,18 @@ public class EquipmentService {
         );
     }
 
-    // 상세조회 API
+    // -------------------------
+    // 3. 설비 상세 조회
+    // -------------------------
     public EquipmentResponse getEquipment(Long equipmentId) {
         return equipmentRepository.findById(equipmentId)
                 .map(EquipmentResponse::from)
                 .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
     }
-    // 특정 설비의 센서데이터 조회
+
+    // -------------------------
+    // 4. 센서 데이터 조회
+    // -------------------------
     public List<MotorSensorDataResponse> getSensorData(Long equipmentId) {
 
         List<MotorSensorData> sensorDataList =
@@ -83,24 +80,25 @@ public class EquipmentService {
                 .toList();
     }
 
-    /**
-     * 특정 설비의 센서 임계값 목록을 조회한다.
-     *
-     * @param configId 모델 설정 ID
-     * @return 센서 임계값 목록
-     */
-    public List<MotorSensorThresholdResponse> getSensorThresholds(Long configId) {
+    // -------------------------
+    // 5. 센서 임계값 조회
+    // -------------------------
+    public List<MotorSensorThresholdResponse> getSensorThresholds(Long equipmentId) {
+
+        // 현재 active config (임시)
+        AnomalyConfig config = anomalyConfigRepository.findById(1L)
+                .orElseThrow(IllegalArgumentException::new);
 
         List<MotorSensorThreshold> thresholdList =
-                motorSensorThresholdRepository.findByConfigId(configId);
+                motorSensorThresholdRepository.findByConfigId(config.getConfigId());
 
         return thresholdList.stream()
                 .map(threshold -> {
-                    String displayName =
-                            sensorDisplayNameMap.getOrDefault(
-                                    threshold.getSensorTag(),
-                                    threshold.getSensorTag()
-                            );
+
+                    String displayName = sensorDisplayNameMap.getOrDefault(
+                            threshold.getSensorTag(),
+                            threshold.getSensorTag()
+                    );
 
                     return MotorSensorThresholdResponse.from(
                             threshold,
@@ -109,17 +107,36 @@ public class EquipmentService {
                 })
                 .toList();
     }
+
+    // -------------------------
+    // 6. severity 계산
+    // -------------------------
+    private String calculateSeverity(Double score, AnomalyConfig config) {
+
+        if (score >= config.getDangerThreshold()) {
+            return "DANGER";
+        } else if (score >= config.getWarningThreshold()) {
+            return "WARNING";
+        } else {
+            return "NORMAL";
+        }
+    }
+
+    // -------------------------
+    // 7. anomaly 조회 (핵심)
+    // -------------------------
     public List<MotorAnomalyResponse> getAnomalies(Long equipmentId) {
 
         List<MotorAnomalyResult> resultList =
                 motorAnomalyResultRepository.findByEquipmentId(equipmentId);
 
-        // 현재 active config (임시로 1번 사용)
-        AnomalyConfig config = anomalyConfigRepository.findById(1L)
-                .orElseThrow(IllegalArgumentException::new);
-
         return resultList.stream()
                 .map(result -> {
+
+                    AnomalyConfig config = anomalyConfigRepository
+                            .findById(result.getConfigId())
+                            .orElseThrow(IllegalArgumentException::new);
+
                     String severity = calculateSeverity(
                             result.getAnomalyScore(),
                             config
