@@ -34,25 +34,25 @@ public class EquipmentController {
     }
 
     @GetMapping("/{equipmentId}/sensor-data")
-    public List<MotorSensorDataResponse> getSensorData(@PathVariable Long equipmentId) {
+    public List<?> getSensorData(@PathVariable Long equipmentId) {
         return equipmentService.getSensorData(equipmentId);
     }
 
     @GetMapping("/{equipmentId}/sensor-thresholds")
     public List<MotorSensorThresholdResponse> getSensorThresholds(@PathVariable Long equipmentId) {
-        return equipmentService.getSensorThresholds(1L);
+        return equipmentService.getSensorThresholds(equipmentId);
     }
 
     @GetMapping("/{equipmentId}/anomalies")
-    public List<MotorAnomalyResponse> getAnomalies(@PathVariable Long equipmentId) {
+    public List<?> getAnomalies(@PathVariable Long equipmentId) {
         return equipmentService.getAnomalies(equipmentId);
     }
 
     @GetMapping("/{equipmentId}/anomalies/{anomalyResultId}/contributions")
-    public List<MotorAnomalyContributionResponse> getContributions(
+    public List<?> getContributions(
             @PathVariable Long equipmentId,
             @PathVariable Long anomalyResultId
     ) {
-        return equipmentService.getContributions(anomalyResultId);
+        return equipmentService.getContributions(equipmentId, anomalyResultId);
     }
 }
