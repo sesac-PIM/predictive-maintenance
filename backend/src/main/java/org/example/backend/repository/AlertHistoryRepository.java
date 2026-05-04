@@ -11,4 +11,9 @@ public interface AlertHistoryRepository extends JpaRepository<AlertHistory, Long
     List<AlertHistory> findAllByOrderByOccurredAtDesc();
 
     Optional<AlertHistory> findTopByEquipmentIdOrderByOccurredAtDesc(Long equipmentId);
+
+    Optional<AlertHistory> findTopByEquipmentIdAndAnomalyResultTypeOrderByAlertIdDesc(
+            Long equipmentId,
+            String anomalyResultType
+    );
 }

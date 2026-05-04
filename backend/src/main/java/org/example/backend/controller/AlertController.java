@@ -1,19 +1,47 @@
 package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.example.backend.service.SlackWebhookService;
+import org.example.backend.dto.response.AlertResponse;
+import org.example.backend.service.AlertService;
+import org.example.backend.repository.AlertHistoryRepository;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/alerts")
 @RequiredArgsConstructor
 public class AlertController {
 
-    private final SlackWebhookService slackWebhookService;
+    private final AlertService alertService;
+    private final AlertHistoryRepository alertHistoryRepository;
 
-    @PostMapping("/test")
-    public String testSlack() {
-        slackWebhookService.sendMessage("✅ 백엔드에서 보내는 Slack Webhook 테스트 메시지입니다.");
-        return "Slack test message sent";
+    // -------------------------
+    // 1. Slack 알림 전송 (모터)
+    // -------------------------
+    @PostMapping("/motor/{anomalyResultId}/send")
+    public String sendMotorAlert(@PathVariable Long anomalyResultId) {
+        alertService.sendMotorAlert(anomalyResultId);
+        return "Motor alert sent";
+    }
+
+    // -------------------------
+    // 2. Slack 알림 전송 (튜브)
+    // -------------------------
+    @PostMapping("/tube/{anomalyResultId}/send")
+    public String sendTubeAlert(@PathVariable Long anomalyResultId) {
+        alertService.sendTubeAlert(anomalyResultId);
+        return "Tube alert sent";
+    }
+
+    // -------------------------
+    // 3. 알림 이력 조회
+    // -------------------------
+    @GetMapping
+    public List<AlertResponse> getAlerts() {
+        return alertHistoryRepository.findAllByOrderByOccurredAtDesc()
+                .stream()
+                .map(AlertResponse::from)
+                .toList();
     }
 }
