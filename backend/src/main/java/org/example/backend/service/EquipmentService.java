@@ -8,6 +8,7 @@ import org.example.backend.domain.equipment.Equipment;
 import org.example.backend.domain.sensor.MotorSensorData;
 import org.example.backend.domain.sensor.MotorSensorThreshold;
 import org.example.backend.domain.sensor.TubeSensorData;
+import org.example.backend.domain.sensor.TubeSensorThreshold;
 import org.example.backend.dto.response.*;
 import org.example.backend.global.enums.EquipmentType;
 import org.example.backend.repository.*;
@@ -24,6 +25,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class EquipmentService {
 
+    private final TubeSensorThresholdRepository tubeSensorThresholdRepository;
     private final EquipmentRepository equipmentRepository;
     private final MotorSensorDataRepository motorSensorDataRepository;
     private final TubeSensorDataRepository tubeSensorDataRepository;
@@ -109,7 +111,10 @@ public class EquipmentService {
     /**
      * 특정 설비의 센서 임계값 목록을 조회한다.
      */
-    public List<MotorSensorThresholdResponse> getSensorThresholds(Long equipmentId) {
+    /**
+     * 특정 설비의 센서 임계값 목록을 조회한다.
+     */
+    public List<SensorThresholdResponse> getSensorThresholds(Long equipmentId) {
 
         Equipment equipment = equipmentRepository.findById(equipmentId)
                 .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
@@ -118,22 +123,36 @@ public class EquipmentService {
                 .findByEquipmentTypeAndIsActiveTrue(equipment.getEquipmentType())
                 .orElseThrow(() -> new IllegalArgumentException("활성화된 이상 판단 기준이 존재하지 않습니다."));
 
-        List<MotorSensorThreshold> thresholdList =
-                motorSensorThresholdRepository.findByConfigId(config.getConfigId());
+        if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
+            return motorSensorThresholdRepository.findByConfigId(config.getConfigId())
+                    .stream()
+                    .map(threshold -> SensorThresholdResponse.builder()
+                            .equipmentType(equipment.getEquipmentType().name())
+                            .sensorTag(threshold.getSensorTag())
+                            .displayName(sensorDisplayNameMap.getOrDefault(
+                                    threshold.getSensorTag(),
+                                    threshold.getSensorTag()
+                            ))
+                            .lowerThreshold(threshold.getLowerThreshold())
+                            .upperThreshold(threshold.getUpperThreshold())
+                            .build())
+                    .toList();
+        }
 
-        return thresholdList.stream()
-                .map(threshold -> {
-                    String displayName = sensorDisplayNameMap.getOrDefault(
-                            threshold.getSensorTag(),
-                            threshold.getSensorTag()
-                    );
-
-                    return MotorSensorThresholdResponse.from(
-                            threshold,
-                            displayName
-                    );
-                })
+        return tubeSensorThresholdRepository.findByConfigId(config.getConfigId())
+                .stream()
+                .map(threshold -> SensorThresholdResponse.builder()
+                        .equipmentType(equipment.getEquipmentType().name())
+                        .sensorTag(threshold.getSensorTag())
+                        .displayName(sensorDisplayNameMap.getOrDefault(
+                                threshold.getSensorTag(),
+                                threshold.getSensorTag()
+                        ))
+                        .lowerThreshold(threshold.getLowerThreshold())
+                        .upperThreshold(threshold.getUpperThreshold())
+                        .build())
                 .toList();
+
     }
 
     // -------------------------

@@ -21,8 +21,11 @@ public class TubeSensorThreshold {
     @Column(name = "sensor_tag", nullable = false)
     private String sensorTag;
 
-    @Column(name = "threshold", nullable = false)
-    private Double threshold;
+    @Column(name = "lower_threshold", nullable = false)
+    private Double lowerThreshold;
+
+    @Column(name = "upper_threshold", nullable = false)
+    private Double upperThreshold;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
