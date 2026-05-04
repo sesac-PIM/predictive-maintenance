@@ -40,12 +40,12 @@ public class EquipmentController {
     }
 
     @GetMapping("/{equipmentId}/anomalies")
-    public List<?> getAnomalies(@PathVariable Long equipmentId) {
+    public List<AnomalyResponse> getAnomalies(@PathVariable Long equipmentId) {
         return equipmentService.getAnomalies(equipmentId);
     }
 
     @GetMapping("/{equipmentId}/anomalies/{anomalyResultId}/contributions")
-    public List<?> getContributions(
+    public List<ContributionResponse> getContributions(
             @PathVariable Long equipmentId,
             @PathVariable Long anomalyResultId
     ) {
