@@ -21,9 +21,6 @@ public class MotorSensorThreshold {
     @Column(name = "config_id", nullable = false)
     private Long configId;
 
-    @Column(name = "current_level", nullable = false)
-    private String currentLevel;
-
     @Column(name = "sensor_tag", nullable = false)
     private String sensorTag;
 

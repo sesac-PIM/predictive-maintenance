@@ -81,35 +81,36 @@ public class EquipmentService {
     }
 
     public List<SensorThresholdResponse> getSensorThresholds(
-            Long equipmentId,
-            String currentLevel
+            Long equipmentId
     ) {
         Equipment equipment = findEquipment(equipmentId);
 
         AnomalyConfig config = anomalyConfigRepository
-                .findByEquipmentTypeAndIsActiveTrue(equipment.getEquipmentType())
+                .findByEquipmentTypeAndIsActiveTrue(
+                        equipment.getEquipmentType()
+                )
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND));
 
+        // MOTOR
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
 
-            if (currentLevel == null || currentLevel.isBlank()) {
-                throw new CustomException(ErrorCode.BAD_REQUEST);
-            }
-
-            String normalizedCurrentLevel = currentLevel.toUpperCase();
-
             return motorSensorThresholdRepository
-                    .findLatestByEquipmentIdAndConfigIdAndCurrentLevel(
+                    .findLatestByEquipmentIdAndConfigId(
                             equipmentId,
-                            config.getConfigId(),
-                            normalizedCurrentLevel
+                            config.getConfigId()
                     )
                     .stream()
                     .map(threshold -> SensorThresholdResponse.builder()
-                            .equipmentType(equipment.getEquipmentType().name())
+                            .equipmentType(
+                                    equipment.getEquipmentType().name()
+                            )
                             .sensorTag(threshold.getSensorTag())
-                            .displayName(sensorNameMapper.getDisplayName(threshold.getSensorTag()))
-                            .currentLevel(threshold.getCurrentLevel())
+                            .displayName(
+                                    sensorNameMapper.getDisplayName(
+                                            threshold.getSensorTag()
+                                    )
+                            )
+                            .currentLevel(null)
                             .windowStartAt(threshold.getWindowStartAt())
                             .windowEndAt(threshold.getWindowEndAt())
                             .lowerThreshold(threshold.getLowerThreshold())
@@ -118,6 +119,7 @@ public class EquipmentService {
                     .toList();
         }
 
+        // TUBE
         return tubeSensorThresholdRepository
                 .findLatestByEquipmentIdAndConfigId(
                         equipmentId,
@@ -125,9 +127,15 @@ public class EquipmentService {
                 )
                 .stream()
                 .map(threshold -> SensorThresholdResponse.builder()
-                        .equipmentType(equipment.getEquipmentType().name())
+                        .equipmentType(
+                                equipment.getEquipmentType().name()
+                        )
                         .sensorTag(threshold.getSensorTag())
-                        .displayName(sensorNameMapper.getDisplayName(threshold.getSensorTag()))
+                        .displayName(
+                                sensorNameMapper.getDisplayName(
+                                        threshold.getSensorTag()
+                                )
+                        )
                         .currentLevel(null)
                         .windowStartAt(threshold.getWindowStartAt())
                         .windowEndAt(threshold.getWindowEndAt())

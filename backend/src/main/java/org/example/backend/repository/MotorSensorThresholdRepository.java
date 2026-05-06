@@ -14,19 +14,16 @@ public interface MotorSensorThresholdRepository
             FROM MotorSensorThreshold m
             WHERE m.equipmentId = :equipmentId
               AND m.configId = :configId
-              AND m.currentLevel = :currentLevel
               AND m.windowEndAt = (
                   SELECT MAX(m2.windowEndAt)
                   FROM MotorSensorThreshold m2
                   WHERE m2.equipmentId = :equipmentId
                     AND m2.configId = :configId
-                    AND m2.currentLevel = :currentLevel
               )
             ORDER BY m.sensorTag ASC
             """)
-    List<MotorSensorThreshold> findLatestByEquipmentIdAndConfigIdAndCurrentLevel(
+    List<MotorSensorThreshold> findLatestByEquipmentIdAndConfigId(
             Long equipmentId,
-            Long configId,
-            String currentLevel
+            Long configId
     );
 }
