@@ -2,13 +2,12 @@ package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.domain.anomaly.AnomalyConfig;
-import org.example.backend.domain.anomaly.MotorAnomalySensorContribution;
-import org.example.backend.domain.anomaly.TubeAnomalySensorContribution;
 import org.example.backend.domain.equipment.Equipment;
 import org.example.backend.domain.sensor.MotorSensorData;
 import org.example.backend.domain.sensor.TubeSensorData;
 import org.example.backend.dto.response.*;
 import org.example.backend.global.enums.EquipmentType;
+import org.example.backend.global.mapper.SensorNameMapper;
 import org.example.backend.repository.*;
 import org.springframework.stereotype.Service;
 
@@ -30,11 +29,7 @@ public class EquipmentService {
     private final MotorAnomalySensorContributionRepository motorAnomalySensorContributionRepository;
     private final TubeAnomalySensorContributionRepository tubeAnomalySensorContributionRepository;
 
-    private static final Map<String, String> sensorDisplayNameMap = Map.of(
-            "ii1211a", "전류",
-            "tt1228a", "NDE 베어링 온도",
-            "yi1593aa", "NDE 진동 1"
-    );
+    private final SensorNameMapper sensorNameMapper;
 
     public List<EquipmentResponse> getEquipments() {
         return equipmentRepository.findAll()
@@ -208,6 +203,6 @@ public class EquipmentService {
     }
 
     private String getDisplayName(String sensorTag) {
-        return sensorDisplayNameMap.getOrDefault(sensorTag, sensorTag);
+        return sensorNameMapper.getDisplayName(sensorTag);
     }
 }
