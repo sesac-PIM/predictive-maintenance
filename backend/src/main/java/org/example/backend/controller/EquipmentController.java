@@ -35,8 +35,11 @@ public class EquipmentController {
     }
 
     @GetMapping("/{equipmentId}/sensor-thresholds")
-    public List<SensorThresholdResponse> getSensorThresholds(@PathVariable Long equipmentId) {
-        return equipmentService.getSensorThresholds(equipmentId);
+    public List<SensorThresholdResponse> getSensorThresholds(
+            @PathVariable Long equipmentId,
+            @RequestParam(required = false) String currentLevel
+    ) {
+        return equipmentService.getSensorThresholds(equipmentId, currentLevel);
     }
 
     @GetMapping("/{equipmentId}/anomalies")
