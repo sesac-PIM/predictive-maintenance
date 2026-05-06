@@ -2,17 +2,20 @@ package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.domain.anomaly.AnomalyConfig;
+import org.example.backend.domain.anomaly.MotorAnomalySensorContribution;
+import org.example.backend.domain.anomaly.TubeAnomalySensorContribution;
 import org.example.backend.domain.equipment.Equipment;
 import org.example.backend.domain.sensor.MotorSensorData;
 import org.example.backend.domain.sensor.TubeSensorData;
 import org.example.backend.dto.response.*;
 import org.example.backend.global.enums.EquipmentType;
+import org.example.backend.global.exception.CustomException;
+import org.example.backend.global.exception.ErrorCode;
 import org.example.backend.global.mapper.SensorNameMapper;
 import org.example.backend.repository.*;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -28,7 +31,6 @@ public class EquipmentService {
     private final AnomalyConfigRepository anomalyConfigRepository;
     private final MotorAnomalySensorContributionRepository motorAnomalySensorContributionRepository;
     private final TubeAnomalySensorContributionRepository tubeAnomalySensorContributionRepository;
-
     private final SensorNameMapper sensorNameMapper;
 
     public List<EquipmentResponse> getEquipments() {
@@ -55,7 +57,7 @@ public class EquipmentService {
     public EquipmentResponse getEquipment(Long equipmentId) {
         return equipmentRepository.findById(equipmentId)
                 .map(EquipmentResponse::from)
-                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND));
     }
 
     public List<?> getSensorData(Long equipmentId) {
@@ -78,32 +80,65 @@ public class EquipmentService {
                 .toList();
     }
 
-    public List<SensorThresholdResponse> getSensorThresholds(Long equipmentId) {
+    public List<SensorThresholdResponse> getSensorThresholds(
+            Long equipmentId
+    ) {
         Equipment equipment = findEquipment(equipmentId);
 
         AnomalyConfig config = anomalyConfigRepository
-                .findByEquipmentTypeAndIsActiveTrue(equipment.getEquipmentType())
-                .orElseThrow(() -> new IllegalArgumentException("활성화된 이상 판단 기준이 존재하지 않습니다."));
+                .findByEquipmentTypeAndIsActiveTrue(
+                        equipment.getEquipmentType()
+                )
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND));
 
+        // MOTOR
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
-            return motorSensorThresholdRepository.findByConfigId(config.getConfigId())
+
+            return motorSensorThresholdRepository
+                    .findLatestByEquipmentIdAndConfigId(
+                            equipmentId,
+                            config.getConfigId()
+                    )
                     .stream()
                     .map(threshold -> SensorThresholdResponse.builder()
-                            .equipmentType(equipment.getEquipmentType().name())
+                            .equipmentType(
+                                    equipment.getEquipmentType().name()
+                            )
                             .sensorTag(threshold.getSensorTag())
-                            .displayName(getDisplayName(threshold.getSensorTag()))
+                            .displayName(
+                                    sensorNameMapper.getDisplayName(
+                                            threshold.getSensorTag()
+                                    )
+                            )
+                            .currentLevel(null)
+                            .windowStartAt(threshold.getWindowStartAt())
+                            .windowEndAt(threshold.getWindowEndAt())
                             .lowerThreshold(threshold.getLowerThreshold())
                             .upperThreshold(threshold.getUpperThreshold())
                             .build())
                     .toList();
         }
 
-        return tubeSensorThresholdRepository.findByConfigId(config.getConfigId())
+        // TUBE
+        return tubeSensorThresholdRepository
+                .findLatestByEquipmentIdAndConfigId(
+                        equipmentId,
+                        config.getConfigId()
+                )
                 .stream()
                 .map(threshold -> SensorThresholdResponse.builder()
-                        .equipmentType(equipment.getEquipmentType().name())
+                        .equipmentType(
+                                equipment.getEquipmentType().name()
+                        )
                         .sensorTag(threshold.getSensorTag())
-                        .displayName(getDisplayName(threshold.getSensorTag()))
+                        .displayName(
+                                sensorNameMapper.getDisplayName(
+                                        threshold.getSensorTag()
+                                )
+                        )
+                        .currentLevel(null)
+                        .windowStartAt(threshold.getWindowStartAt())
+                        .windowEndAt(threshold.getWindowEndAt())
                         .lowerThreshold(threshold.getLowerThreshold())
                         .upperThreshold(threshold.getUpperThreshold())
                         .build())
@@ -158,7 +193,7 @@ public class EquipmentService {
                     .map(contribution -> ContributionResponse.builder()
                             .equipmentType(equipment.getEquipmentType().name())
                             .sensorTag(contribution.getSensorTag())
-                            .displayName(getDisplayName(contribution.getSensorTag()))
+                            .displayName(sensorNameMapper.getDisplayName(contribution.getSensorTag()))
                             .sensorValue(contribution.getSensorValue())
                             .contributionScore(contribution.getContributionScore())
                             .contributionRank(contribution.getContributionRank())
@@ -172,7 +207,7 @@ public class EquipmentService {
                 .map(contribution -> ContributionResponse.builder()
                         .equipmentType(equipment.getEquipmentType().name())
                         .sensorTag(contribution.getSensorTag())
-                        .displayName(getDisplayName(contribution.getSensorTag()))
+                        .displayName(sensorNameMapper.getDisplayName(contribution.getSensorTag()))
                         .sensorValue(contribution.getSensorValue())
                         .contributionScore(contribution.getContributionScore())
                         .contributionRank(contribution.getContributionRank())
@@ -182,12 +217,12 @@ public class EquipmentService {
 
     private Equipment findEquipment(Long equipmentId) {
         return equipmentRepository.findById(equipmentId)
-                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND));
     }
 
     private AnomalyConfig findConfig(Long configId) {
         return anomalyConfigRepository.findById(configId)
-                .orElseThrow(() -> new IllegalArgumentException("이상 판단 기준이 존재하지 않습니다."));
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND));
     }
 
     private String calculateSeverity(Double score, AnomalyConfig config) {
@@ -200,9 +235,5 @@ public class EquipmentService {
         }
 
         return "NORMAL";
-    }
-
-    private String getDisplayName(String sensorTag) {
-        return sensorNameMapper.getDisplayName(sensorTag);
     }
 }
