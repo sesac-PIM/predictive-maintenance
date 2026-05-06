@@ -12,7 +12,6 @@ public class SensorThresholdResponse {
     private String equipmentType;
     private String sensorTag;
     private String displayName;
-    private String currentLevel;
     private LocalDateTime windowStartAt;
     private LocalDateTime windowEndAt;
     private Double lowerThreshold;
