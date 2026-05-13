@@ -14,4 +14,7 @@ public class AnomalyResponse {
     private LocalDateTime measuredAt;
     private Double anomalyScore;
     private String severity;
+    private String eventType;
+    private Integer durationSec;
+    private String description;
 }

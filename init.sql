@@ -243,6 +243,10 @@ CREATE TABLE motor_anomaly_result (
     measured_at TIMESTAMP NOT NULL,
 
     anomaly_score DOUBLE PRECISION NOT NULL,
+
+    event_type VARCHAR(50),
+    duration_sec INT,
+    description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_motor_anomaly_equipment

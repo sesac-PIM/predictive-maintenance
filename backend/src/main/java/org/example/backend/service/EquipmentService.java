@@ -159,6 +159,10 @@ public class EquipmentService {
                                 .measuredAt(result.getMeasuredAt())
                                 .anomalyScore(result.getAnomalyScore())
                                 .severity(severity)
+
+                                .eventType(result.getEventType())
+                                .durationSec(result.getDurationSec())
+                                .description(result.getDescription())
                                 .build();
                     })
                     .toList();
