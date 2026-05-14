@@ -15,8 +15,10 @@ public class EquipmentController {
     private final EquipmentService equipmentService;
 
     @GetMapping
-    public List<EquipmentResponse> getEquipments() {
-        return equipmentService.getEquipments();
+    public List<EquipmentResponse> getEquipments(
+            @RequestParam(required = false) Long plantId
+    ) {
+        return equipmentService.getEquipments(plantId);
     }
 
     @GetMapping("/summary")
