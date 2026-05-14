@@ -20,6 +20,12 @@ public class MotorAnomalyResult {
 
     private Double anomalyScore;
 
+    private String eventType;
+
+    private Integer durationSec;
+
+    private  String description;
+
     private LocalDateTime createdAt;
 
     private Long equipmentId;
