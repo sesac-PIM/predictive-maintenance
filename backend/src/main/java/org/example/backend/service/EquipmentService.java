@@ -2,8 +2,6 @@ package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.domain.anomaly.AnomalyConfig;
-import org.example.backend.domain.anomaly.MotorAnomalySensorContribution;
-import org.example.backend.domain.anomaly.TubeAnomalySensorContribution;
 import org.example.backend.domain.equipment.Equipment;
 import org.example.backend.domain.sensor.MotorSensorData;
 import org.example.backend.domain.sensor.TubeSensorData;
@@ -80,9 +78,7 @@ public class EquipmentService {
                 .toList();
     }
 
-    public List<SensorThresholdResponse> getSensorThresholds(
-            Long equipmentId
-    ) {
+    public List<SensorThresholdResponse> getSensorThresholds(Long equipmentId) {
         Equipment equipment = findEquipment(equipmentId);
 
         AnomalyConfig config = anomalyConfigRepository
@@ -91,9 +87,7 @@ public class EquipmentService {
                 )
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND));
 
-        // MOTOR
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
-
             return motorSensorThresholdRepository
                     .findLatestByEquipmentIdAndConfigId(
                             equipmentId,
@@ -101,9 +95,7 @@ public class EquipmentService {
                     )
                     .stream()
                     .map(threshold -> SensorThresholdResponse.builder()
-                            .equipmentType(
-                                    equipment.getEquipmentType().name()
-                            )
+                            .equipmentType(equipment.getEquipmentType().name())
                             .sensorTag(threshold.getSensorTag())
                             .displayName(
                                     sensorNameMapper.getDisplayName(
@@ -118,7 +110,6 @@ public class EquipmentService {
                     .toList();
         }
 
-        // TUBE
         return tubeSensorThresholdRepository
                 .findLatestByEquipmentIdAndConfigId(
                         equipmentId,
@@ -126,9 +117,7 @@ public class EquipmentService {
                 )
                 .stream()
                 .map(threshold -> SensorThresholdResponse.builder()
-                        .equipmentType(
-                                equipment.getEquipmentType().name()
-                        )
+                        .equipmentType(equipment.getEquipmentType().name())
                         .sensorTag(threshold.getSensorTag())
                         .displayName(
                                 sensorNameMapper.getDisplayName(
@@ -143,7 +132,7 @@ public class EquipmentService {
                 .toList();
     }
 
-    public List<AnomalyResponse> getAnomalies(Long equipmentId) {
+    public List<?> getAnomalies(Long equipmentId) {
         Equipment equipment = findEquipment(equipmentId);
 
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
@@ -151,15 +140,17 @@ public class EquipmentService {
                     .stream()
                     .map(result -> {
                         AnomalyConfig config = findConfig(result.getConfigId());
-                        String severity = calculateSeverity(result.getAnomalyScore(), config);
+                        String severity = calculateSeverity(
+                                result.getAnomalyScore(),
+                                config
+                        );
 
-                        return AnomalyResponse.builder()
+                        return MotorAnomalyResponse.builder()
                                 .equipmentType(equipment.getEquipmentType().name())
                                 .anomalyResultId(result.getMotorAnomalyResultId())
                                 .measuredAt(result.getMeasuredAt())
                                 .anomalyScore(result.getAnomalyScore())
                                 .severity(severity)
-
                                 .eventType(result.getEventType())
                                 .durationSec(result.getDurationSec())
                                 .description(result.getDescription())
@@ -172,9 +163,12 @@ public class EquipmentService {
                 .stream()
                 .map(result -> {
                     AnomalyConfig config = findConfig(result.getConfigId());
-                    String severity = calculateSeverity(result.getAnomalyScore(), config);
+                    String severity = calculateSeverity(
+                            result.getAnomalyScore(),
+                            config
+                    );
 
-                    return AnomalyResponse.builder()
+                    return TubeAnomalyResponse.builder()
                             .equipmentType(equipment.getEquipmentType().name())
                             .anomalyResultId(result.getTubeAnomalyResultId())
                             .measuredAt(result.getMeasuredAt())
@@ -185,17 +179,26 @@ public class EquipmentService {
                 .toList();
     }
 
-    public List<ContributionResponse> getContributions(Long equipmentId, Long anomalyResultId) {
+    public List<ContributionResponse> getContributions(
+            Long equipmentId,
+            Long anomalyResultId
+    ) {
         Equipment equipment = findEquipment(equipmentId);
 
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
             return motorAnomalySensorContributionRepository
-                    .findByMotorAnomalyResultIdOrderByContributionRankAsc(anomalyResultId)
+                    .findByMotorAnomalyResultIdOrderByContributionRankAsc(
+                            anomalyResultId
+                    )
                     .stream()
                     .map(contribution -> ContributionResponse.builder()
                             .equipmentType(equipment.getEquipmentType().name())
                             .sensorTag(contribution.getSensorTag())
-                            .displayName(sensorNameMapper.getDisplayName(contribution.getSensorTag()))
+                            .displayName(
+                                    sensorNameMapper.getDisplayName(
+                                            contribution.getSensorTag()
+                                    )
+                            )
                             .sensorValue(contribution.getSensorValue())
                             .contributionScore(contribution.getContributionScore())
                             .contributionRank(contribution.getContributionRank())
@@ -204,12 +207,18 @@ public class EquipmentService {
         }
 
         return tubeAnomalySensorContributionRepository
-                .findByTubeAnomalyResultIdOrderByContributionRankAsc(anomalyResultId)
+                .findByTubeAnomalyResultIdOrderByContributionRankAsc(
+                        anomalyResultId
+                )
                 .stream()
                 .map(contribution -> ContributionResponse.builder()
                         .equipmentType(equipment.getEquipmentType().name())
                         .sensorTag(contribution.getSensorTag())
-                        .displayName(sensorNameMapper.getDisplayName(contribution.getSensorTag()))
+                        .displayName(
+                                sensorNameMapper.getDisplayName(
+                                        contribution.getSensorTag()
+                                )
+                        )
                         .sensorValue(contribution.getSensorValue())
                         .contributionScore(contribution.getContributionScore())
                         .contributionRank(contribution.getContributionRank())
