@@ -38,10 +38,11 @@ public class AlertController {
     // 3. 알림 이력 조회
     // -------------------------
     @GetMapping
-    public List<AlertResponse> getAlerts() {
-        return alertHistoryRepository.findAllByOrderByOccurredAtDesc()
-                .stream()
-                .map(AlertResponse::from)
-                .toList();
+    public List<AlertResponse> getAlerts(
+            @RequestParam(required = false) Long equipmentId,
+            @RequestParam(required = false) String severity,
+            @RequestParam(required = false) String type
+    ) {
+        return alertService.getAlerts(equipmentId, severity, type);
     }
 }
