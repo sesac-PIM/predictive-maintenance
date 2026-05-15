@@ -31,7 +31,14 @@ public class EquipmentService {
     private final TubeAnomalySensorContributionRepository tubeAnomalySensorContributionRepository;
     private final SensorNameMapper sensorNameMapper;
 
-    public List<EquipmentResponse> getEquipments() {
+    public List<EquipmentResponse> getEquipments(Long plantId) {
+        if (plantId != null) {
+            return equipmentRepository.findByPlant_PlantId(plantId)
+                    .stream()
+                    .map(EquipmentResponse::from)
+                    .toList();
+        }
+
         return equipmentRepository.findAll()
                 .stream()
                 .map(EquipmentResponse::from)
