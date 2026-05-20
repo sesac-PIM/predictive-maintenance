@@ -103,13 +103,13 @@ def run_inference():
         
         res_id = cur.fetchone()[0]
         
-        # [6] 결과 저장 (센서별 기여도 - 11개 모두 저장 가능)
-        # 기여도 정규화 (0~1 범위: 각 센서의 오차 / 전체 오차 합)
-        diff_sum = np.sum(diff)
+        # [6] 결과 저장 (센서별 기여도 - 파생변수 제외, 원본 9개만 저장)
+        diff_raw = diff[:9] # 뒤쪽 파생변수 2개 잘라내기
+        diff_sum = np.sum(diff_raw)
         if diff_sum > 0:
-            contribution_normalized = diff / diff_sum
+            contribution_normalized = diff_raw / diff_sum
         else:
-            contribution_normalized = diff
+            contribution_normalized = diff_raw
 
         # 기여도 순위 계산 (점수가 큰 순서대로 정렬한 인덱스 반환)
         sorted_indices = np.argsort(contribution_normalized)[::-1]
