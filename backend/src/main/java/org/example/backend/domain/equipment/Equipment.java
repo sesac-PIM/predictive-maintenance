@@ -41,6 +41,8 @@ public class Equipment {
 
     private String description;
 
+    private Integer unitNo;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 }
