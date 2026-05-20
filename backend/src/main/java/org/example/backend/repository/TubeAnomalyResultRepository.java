@@ -8,5 +8,5 @@ import java.util.List;
 public interface TubeAnomalyResultRepository
         extends JpaRepository<TubeAnomalyResult, Long> {
 
-    List<TubeAnomalyResult> findByEquipmentId(Long equipmentId);
+    List<TubeAnomalyResult> findByEquipmentIdOrderByMeasuredAtDesc(Long equipmentId);
 }

@@ -8,5 +8,5 @@ import java.util.List;
 public interface TubeSensorDataRepository
         extends JpaRepository<TubeSensorData, Long> {
 
-    List<TubeSensorData> findByEquipmentId(Long equipmentId);
+    List<TubeSensorData> findByEquipmentIdOrderByMeasuredAtDesc(Long equipmentId);
 }
