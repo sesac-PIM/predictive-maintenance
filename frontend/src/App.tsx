@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid } from 'recharts';
 
@@ -98,8 +98,15 @@ type UiPlant = {
   left: number;
 };
 
+declare global {
+  interface Window {
+    kakao?: any;
+  }
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY || ''; // 카카오맵 JavaScript 키(.env) 자리
+const TUBE_DIAGRAM_SRC = '/tube-diagram.svg';
 
 async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
@@ -183,6 +190,58 @@ function chartDataFromAnomalies(items: ApiAnomaly[]) {
     score: item.anomalyScore,
   }));
 }
+
+const KakaoPlantMap = ({ plants, selectedPlantId, onPlantClick }: { plants: UiPlant[], selectedPlantId: string, onPlantClick: (id: string) => void }) => {
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!KAKAO_MAP_KEY) return;
+    if (window.kakao?.maps) {
+      setReady(true);
+      return;
+    }
+
+    const existing = document.querySelector<HTMLScriptElement>('script[data-kakao-map="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => setReady(true), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.dataset.kakaoMap = 'true';
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_MAP_KEY}&autoload=false`;
+    script.async = true;
+    script.onload = () => window.kakao?.maps?.load(() => setReady(true));
+    document.head.appendChild(script);
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !mapRef.current || !window.kakao?.maps || plants.length === 0) return;
+    const selected = plants.find(plant => plant.id === selectedPlantId) || plants[0];
+    const center = new window.kakao.maps.LatLng(36.3, 127.8);
+    const map = new window.kakao.maps.Map(mapRef.current, {
+      center,
+      level: 13,
+    });
+
+    plants.forEach(plant => {
+      if (plant.top == null || plant.left == null) return;
+      const lat = 38.4 - (plant.top / 100) * 5.6;
+      const lng = 124.4 + (plant.left / 100) * 6.2;
+      const position = new window.kakao.maps.LatLng(lat, lng);
+      const marker = new window.kakao.maps.Marker({ position, map });
+      const info = new window.kakao.maps.InfoWindow({
+        content: `<div style="padding:6px 10px;font-size:12px;font-weight:700;color:#111">${plant.name}</div>`,
+      });
+      window.kakao.maps.event.addListener(marker, 'click', () => onPlantClick(plant.id));
+      if (plant.id === selected.id) info.open(map, marker);
+    });
+  }, [ready, plants, selectedPlantId, onPlantClick]);
+
+  if (!KAKAO_MAP_KEY) return null;
+  return <div ref={mapRef} className="absolute inset-0 z-10 opacity-90" />;
+};
 
 const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) => {
   const contributions: ApiContribution[] = log.contributions || [];
@@ -541,6 +600,7 @@ const DashboardPage = ({ onNavigateToDetail }: { onNavigateToDetail: (plantId: s
 
         {/* Main Map Area */}
         <section className="flex-1 relative bg-background overflow-hidden flex items-center justify-center">
+          <KakaoPlantMap plants={plants} selectedPlantId={selectedPlantId} onPlantClick={handlePlantClick} />
           {/* Background Grid */}
           <div className="absolute inset-0 grid-bg opacity-40 z-0"></div>
           <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/50 pointer-events-none z-1"></div>
@@ -673,7 +733,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       .catch(() => setPlants([]));
   }, []);
 
-  const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '???? ??? ??', location: '', capacity: '', units: '0', top: 50, left: 50 };
+  const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '발전본부 데이터 없음', location: '', capacity: '', units: '0', top: 50, left: 50 };
   const numericPlantId = plant?.plantId || Number(plantId);
 
   useEffect(() => {
@@ -1195,7 +1255,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
       .catch(() => setPlants([]));
   }, []);
 
-  const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '???? ??? ??', location: '', capacity: '', units: '0', top: 50, left: 50 };
+  const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '발전본부 데이터 없음', location: '', capacity: '', units: '0', top: 50, left: 50 };
   const numericPlantId = plant?.plantId || Number(plantId);
   const unitCount = Math.max(0, ...equipments.map(e => e.unitNo || 0));
 
@@ -1282,14 +1342,14 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
 
   const contributionPanel = (
     <section className="rounded-2xl p-5 border border-gray-800/50 bg-black/20 dashboard-card h-full">
-      <h3 className="text-xs font-bold text-[#38bdf8] uppercase mb-5 tracking-[0.12em]">?? ??? (TOP 3)</h3>
+      <h3 className="text-xs font-bold text-[#38bdf8] uppercase mb-5 tracking-[0.12em]">센서 기여도 (TOP 3)</h3>
       {currentSeverity === 'NORMAL' ? (
         <div className="h-full min-h-[90px] flex items-center justify-center text-center rounded-xl border border-dashed border-white/[0.06] bg-white/[0.02] px-4">
-          <p className="text-xs font-bold text-gray-500">?? ????? ??? ???? ???? ????.</p>
+          <p className="text-xs font-bold text-gray-500">정상 상태에서는 기여도 데이터가 표시되지 않습니다.</p>
         </div>
       ) : contributions.length === 0 ? (
         <div className="h-full min-h-[90px] flex items-center justify-center text-center rounded-xl border border-dashed border-white/[0.06] bg-white/[0.02] px-4">
-          <p className="text-xs font-bold text-gray-500">?? ??? ???? ????.</p>
+          <p className="text-xs font-bold text-gray-500">센서 기여도 데이터가 없습니다.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -1314,11 +1374,11 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
   const eventTimeline = (
     <section className="rounded-2xl border border-gray-800/50 bg-black/20 overflow-hidden dashboard-card h-full flex flex-col">
       <header className="p-4 border-b border-gray-800/30">
-        <h3 className="text-[11px] font-bold uppercase tracking-widest text-gray-500">??? ????</h3>
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-gray-500">이벤트 타임라인</h3>
       </header>
       <div className="p-4 custom-scrollbar text-[11px] space-y-6 overflow-y-auto">
         {anomalyRows.length === 0 ? (
-          <div className="h-24 flex items-center justify-center text-gray-500 text-xs border border-dashed border-white/[0.06] rounded-xl">??? ???? ????.</div>
+          <div className="h-24 flex items-center justify-center text-gray-500 text-xs border border-dashed border-white/[0.06] rounded-xl">이벤트 데이터가 없습니다.</div>
         ) : (
           <div className="relative border-l border-gray-800 pl-4 ml-1 space-y-6">
             {anomalyRows.slice(0, 8).map(event => {
@@ -1329,7 +1389,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                   <div className="absolute -left-[21px] top-1 w-2 h-2 rounded-full" style={{ backgroundColor: color }}></div>
                   <span className="font-mono" style={{ color }}>{formatApiTime(event.measuredAt)}</span>
                   <p className="font-bold text-white mt-1">{event.eventType || severity}</p>
-                  <p className="opacity-60 text-gray-400">{eventDescPrefix} {event.description || ('?? ?? ' + event.anomalyScore.toFixed(3))}</p>
+                  <p className="opacity-60 text-gray-400">{eventDescPrefix} {event.description || ('이상 점수 ' + event.anomalyScore.toFixed(3))}</p>
                 </div>
               );
             })}
@@ -1468,7 +1528,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                         <XAxis dataKey="time" stroke="#64748b" fontSize={10} />
                         <YAxis domain={[0, 1]} stroke="#64748b" fontSize={10} />
                         <Tooltip contentStyle={{ backgroundColor: '#11171c', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '11px' }} />
-                        <Line type="monotone" dataKey="contributionScore" stroke="#38bdf8" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="score" stroke="#38bdf8" strokeWidth={2} dot={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   )}
@@ -1481,16 +1541,14 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
 
               <section className="h-[34%] min-h-[210px] bg-[#171c20]/50 rounded-2xl p-5 border border-gray-800/50 flex flex-col dashboard-card">
                 <div className="flex-1 rounded-xl border border-dashed border-gray-700/70 bg-white/[0.02] overflow-hidden flex items-center justify-center">
-                  <div className="w-full h-full flex items-center justify-center text-gray-600">
-                    <span className="material-symbols-outlined text-6xl opacity-30">image</span>
-                  </div>
+                  <img src={TUBE_DIAGRAM_SRC} alt="가스화기 튜브 도면" className="w-full h-full object-contain" />
                 </div>
               </section>
             </main>
 
             <aside className="w-[22%] flex flex-col gap-4 min-h-0">
-              <div className="flex-1 min-h-0">{eventTimeline}</div>
-              {contributionPanel}
+              <div className="flex-[1.15] min-h-0">{eventTimeline}</div>
+              <div className="flex-[0.85] min-h-0">{contributionPanel}</div>
             </aside>
 
             <aside className="w-[26%] flex flex-col gap-4 bg-[#171c20]/50 rounded-2xl p-5 border border-gray-800/50 h-full overflow-hidden dashboard-card">
@@ -1545,7 +1603,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                         <XAxis dataKey="time" stroke="#64748b" fontSize={10} />
                         <YAxis domain={[0, 1]} stroke="#64748b" fontSize={10} />
                         <Tooltip contentStyle={{ backgroundColor: '#11171c', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '11px' }} />
-                        <Line type="monotone" dataKey="contributionScore" stroke="#38bdf8" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="score" stroke="#38bdf8" strokeWidth={2} dot={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   )}
