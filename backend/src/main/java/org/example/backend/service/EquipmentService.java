@@ -70,7 +70,7 @@ public class EquipmentService {
 
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
             List<MotorSensorData> sensorDataList =
-                    motorSensorDataRepository.findByEquipmentId(equipmentId);
+                    motorSensorDataRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId);
 
             return sensorDataList.stream()
                     .map(MotorSensorDataResponse::from)
@@ -78,7 +78,7 @@ public class EquipmentService {
         }
 
         List<TubeSensorData> sensorDataList =
-                tubeSensorDataRepository.findByEquipmentId(equipmentId);
+                tubeSensorDataRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId);
 
         return sensorDataList.stream()
                 .map(TubeSensorDataResponse::from)
@@ -143,7 +143,7 @@ public class EquipmentService {
         Equipment equipment = findEquipment(equipmentId);
 
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
-            return motorAnomalyResultRepository.findByEquipmentId(equipmentId)
+            return motorAnomalyResultRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId)
                     .stream()
                     .map(result -> {
                         AnomalyConfig config = findConfig(result.getConfigId());
@@ -166,7 +166,7 @@ public class EquipmentService {
                     .toList();
         }
 
-        return tubeAnomalyResultRepository.findByEquipmentId(equipmentId)
+        return tubeAnomalyResultRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId)
                 .stream()
                 .map(result -> {
                     AnomalyConfig config = findConfig(result.getConfigId());
