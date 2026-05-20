@@ -10,7 +10,22 @@ DROP TABLE IF EXISTS anomaly_config CASCADE;
 DROP TABLE IF EXISTS motor_sensor_data CASCADE;
 DROP TABLE IF EXISTS tube_sensor_data CASCADE;
 DROP TABLE IF EXISTS equipment CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS plant CASCADE;
+
+--------------------------------------------------
+-- 0. users
+--------------------------------------------------
+CREATE TABLE users (
+    user_id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(30) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_user_role
+        CHECK (role IN ('ROLE_USER', 'ROLE_ADMIN'))
+);
 
 --------------------------------------------------
 -- 1. plant
@@ -31,6 +46,7 @@ CREATE TABLE equipment (
     equipment_id BIGSERIAL PRIMARY KEY,
     plant_id BIGINT NOT NULL,
     equipment_name VARCHAR(100) NOT NULL,
+    unit_no INT NOT NULL,
     equipment_type VARCHAR(20) NOT NULL,
     status VARCHAR(20) NOT NULL,
     status_updated_at TIMESTAMP,
@@ -114,14 +130,10 @@ CREATE TABLE tube_sensor_data (
     tag_13pdt0067 DOUBLE PRECISION,
     tag_13fi0044 DOUBLE PRECISION,
     tag_13ffyc0046 DOUBLE PRECISION,
-    tag_13fy0045 DOUBLE PRECISION, -- MP Balance
+    tag_13fy0045 DOUBLE PRECISION,
     tag_13jyi9001 DOUBLE PRECISION,
     tag_10ind0001 DOUBLE PRECISION,
     bopc1_1_16200_fi_po041 DOUBLE PRECISION,
-
-    -- [Derived Variables] 파생변수 (노트북 분석 로직용)
-    differential_pressure_gradient DOUBLE PRECISION, -- 차압 기울기
-    sgc_out_temp_ma_1d DOUBLE PRECISION,            -- 온도 1일 이동 평균
 
     CONSTRAINT fk_tube_sensor_equipment
         FOREIGN KEY (equipment_id)
@@ -152,50 +164,75 @@ CREATE TABLE anomaly_config (
 
 --------------------------------------------------
 -- 6. motor_sensor_threshold
+-- window 기반 동적 threshold
+-- equipment + current_level + sensor_tag + window 기준
 --------------------------------------------------
 CREATE TABLE motor_sensor_threshold (
     motor_sensor_threshold_id BIGSERIAL PRIMARY KEY,
+    equipment_id BIGINT NOT NULL,
     config_id BIGINT NOT NULL,
     sensor_tag VARCHAR(100) NOT NULL,
+    window_start_at TIMESTAMP NOT NULL,
+    window_end_at TIMESTAMP NOT NULL,
     lower_threshold DOUBLE PRECISION NOT NULL,
     upper_threshold DOUBLE PRECISION NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_motor_threshold_equipment
+        FOREIGN KEY (equipment_id)
+        REFERENCES equipment(equipment_id),
 
     CONSTRAINT fk_motor_threshold_config
         FOREIGN KEY (config_id)
         REFERENCES anomaly_config(config_id),
 
+    CONSTRAINT chk_motor_threshold_window
+        CHECK (window_start_at < window_end_at),
+
     CONSTRAINT chk_motor_threshold_range
         CHECK (lower_threshold < upper_threshold),
 
-    CONSTRAINT uq_motor_threshold_config_tag
-        UNIQUE (config_id, sensor_tag)
+    CONSTRAINT uq_motor_threshold_window
+        UNIQUE (equipment_id, config_id, sensor_tag, window_start_at, window_end_at)
 );
 
 --------------------------------------------------
 -- 7. tube_sensor_threshold
+-- window 기반 동적 threshold
+-- equipment + sensor_tag + window 기준
 --------------------------------------------------
 CREATE TABLE tube_sensor_threshold (
     tube_sensor_threshold_id BIGSERIAL PRIMARY KEY,
+    equipment_id BIGINT NOT NULL,
     config_id BIGINT NOT NULL,
     sensor_tag VARCHAR(150) NOT NULL,
+    window_start_at TIMESTAMP NOT NULL,
+    window_end_at TIMESTAMP NOT NULL,
     lower_threshold DOUBLE PRECISION NOT NULL,
     upper_threshold DOUBLE PRECISION NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_tube_threshold_equipment
+        FOREIGN KEY (equipment_id)
+        REFERENCES equipment(equipment_id),
 
     CONSTRAINT fk_tube_threshold_config
         FOREIGN KEY (config_id)
         REFERENCES anomaly_config(config_id),
 
+    CONSTRAINT chk_tube_threshold_window
+        CHECK (window_start_at < window_end_at),
+
     CONSTRAINT chk_tube_threshold_range
         CHECK (lower_threshold < upper_threshold),
 
-    CONSTRAINT uq_tube_threshold_config_tag
-        UNIQUE (config_id, sensor_tag)
+    CONSTRAINT uq_tube_threshold_window
+        UNIQUE (equipment_id, config_id, sensor_tag, window_start_at, window_end_at)
 );
 
 --------------------------------------------------
 -- 8. motor_anomaly_result
+-- window 기반: N개의 motor_sensor_data -> 1개의 anomaly_result
 --------------------------------------------------
 CREATE TABLE motor_anomaly_result (
     motor_anomaly_result_id BIGSERIAL PRIMARY KEY,
@@ -207,6 +244,10 @@ CREATE TABLE motor_anomaly_result (
     measured_at TIMESTAMP NOT NULL,
 
     anomaly_score DOUBLE PRECISION NOT NULL,
+
+    event_type VARCHAR(50),
+    duration_sec INT,
+    description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_motor_anomaly_equipment
@@ -226,6 +267,7 @@ CREATE TABLE motor_anomaly_result (
 
 --------------------------------------------------
 -- 9. tube_anomaly_result
+-- window 기반: N개의 tube_sensor_data -> 1개의 anomaly_result
 --------------------------------------------------
 CREATE TABLE tube_anomaly_result (
     tube_anomaly_result_id BIGSERIAL PRIMARY KEY,
@@ -256,6 +298,8 @@ CREATE TABLE tube_anomaly_result (
 
 --------------------------------------------------
 -- 10. alert_history
+-- motor/tube anomaly_result를 공통으로 참조해야 하므로
+-- anomaly_result_id는 직접 FK가 아니라 논리 참조
 --------------------------------------------------
 CREATE TABLE alert_history (
     alert_id BIGSERIAL PRIMARY KEY,
@@ -278,7 +322,7 @@ CREATE TABLE alert_history (
         CHECK (anomaly_result_type IN ('MOTOR', 'TUBE')),
 
     CONSTRAINT chk_alert_severity
-        CHECK (severity IN ('WARNING', 'DANGER')),
+        CHECK (severity IN ('NORMAL', 'WARNING', 'DANGER')),
 
     CONSTRAINT chk_alert_channel
         CHECK (channel IS NULL OR channel IN ('WEB', 'EMAIL', 'SLACK', 'SMS')),
@@ -301,7 +345,8 @@ CREATE TABLE motor_anomaly_sensor_contribution (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_motor_contribution_result
-        FOREIGN KEY (motor_anomaly_result_id) REFERENCES motor_anomaly_result(motor_anomaly_result_id),
+        FOREIGN KEY (motor_anomaly_result_id)
+        REFERENCES motor_anomaly_result(motor_anomaly_result_id),
 
     CONSTRAINT chk_motor_contribution_rank
         CHECK (contribution_rank IS NULL OR contribution_rank > 0),
@@ -324,7 +369,8 @@ CREATE TABLE tube_anomaly_sensor_contribution (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_tube_contribution_result
-        FOREIGN KEY (tube_anomaly_result_id) REFERENCES tube_anomaly_result(tube_anomaly_result_id),
+        FOREIGN KEY (tube_anomaly_result_id)
+        REFERENCES tube_anomaly_result(tube_anomaly_result_id),
 
     CONSTRAINT chk_tube_contribution_rank
         CHECK (contribution_rank IS NULL OR contribution_rank > 0),
@@ -336,27 +382,120 @@ CREATE TABLE tube_anomaly_sensor_contribution (
 --------------------------------------------------
 -- Index
 --------------------------------------------------
-CREATE INDEX idx_equipment_plant_id ON equipment(plant_id);
-CREATE INDEX idx_equipment_type ON equipment(equipment_type);
-CREATE INDEX idx_motor_sensor_equipment_measured ON motor_sensor_data(equipment_id, measured_at);
-CREATE INDEX idx_tube_sensor_equipment_measured ON tube_sensor_data(equipment_id, measured_at);
-CREATE INDEX idx_motor_threshold_config_tag ON motor_sensor_threshold(config_id, sensor_tag);
-CREATE INDEX idx_tube_threshold_config_tag ON tube_sensor_threshold(config_id, sensor_tag);
-CREATE INDEX idx_motor_anomaly_equipment_window ON motor_anomaly_result(equipment_id, window_start_at, window_end_at);
-CREATE INDEX idx_tube_anomaly_equipment_window ON tube_anomaly_result(equipment_id, window_start_at, window_end_at);
-CREATE INDEX idx_alert_equipment_occurred ON alert_history(equipment_id, occurred_at);
+CREATE INDEX idx_equipment_plant_id
+    ON equipment(plant_id);
+
+CREATE INDEX idx_equipment_type
+    ON equipment(equipment_type);
+
+CREATE INDEX idx_motor_sensor_equipment_measured
+    ON motor_sensor_data(equipment_id, measured_at);
+
+CREATE INDEX idx_tube_sensor_equipment_measured
+    ON tube_sensor_data(equipment_id, measured_at);
+
+CREATE INDEX idx_motor_threshold_latest
+    ON motor_sensor_threshold(equipment_id, config_id, current_level, window_end_at);
+
+CREATE INDEX idx_motor_threshold_window
+    ON motor_sensor_threshold(equipment_id, config_id, current_level, window_start_at, window_end_at);
+
+CREATE INDEX idx_tube_threshold_latest
+    ON tube_sensor_threshold(equipment_id, config_id, window_end_at);
+
+CREATE INDEX idx_tube_threshold_window
+    ON tube_sensor_threshold(equipment_id, config_id, window_start_at, window_end_at);
+
+CREATE INDEX idx_motor_anomaly_equipment_window
+    ON motor_anomaly_result(equipment_id, window_start_at, window_end_at);
+
+CREATE INDEX idx_tube_anomaly_equipment_window
+    ON tube_anomaly_result(equipment_id, window_start_at, window_end_at);
+
+CREATE INDEX idx_motor_anomaly_config
+    ON motor_anomaly_result(config_id);
+
+CREATE INDEX idx_tube_anomaly_config
+    ON tube_anomaly_result(config_id);
+
+CREATE INDEX idx_alert_equipment_occurred
+    ON alert_history(equipment_id, occurred_at);
+
+CREATE INDEX idx_alert_result_type_id
+    ON alert_history(anomaly_result_type, anomaly_result_id);
+
+CREATE INDEX idx_motor_contribution_result_rank
+    ON motor_anomaly_sensor_contribution(motor_anomaly_result_id, contribution_rank);
+
+CREATE INDEX idx_tube_contribution_result_rank
+    ON tube_anomaly_sensor_contribution(tube_anomaly_result_id, contribution_rank);
 
 --------------------------------------------------
 -- 기본 데이터
 --------------------------------------------------
 
-INSERT INTO plant (plant_name, location, latitude, longitude)
-VALUES ('IGCC 발전소', '충남 태안', 36.745, 126.297);
+-- plant
+INSERT INTO plant (
+    plant_name,
+    location,
+    latitude,
+    longitude
+)
+VALUES
+('IGCC 발전소', '충남 태안', 36.745, 126.297);
 
-INSERT INTO equipment (plant_id, equipment_name, equipment_type, status, status_updated_at, description)
-VALUES (1, '고압전동기 A', 'MOTOR', 'NORMAL', CURRENT_TIMESTAMP, '고압전동기 이상징후 감지 대상 설비'),
-       (1, 'IGCC 튜브 A', 'TUBE', 'NORMAL', CURRENT_TIMESTAMP, '튜브 누설 감지 대상 설비');
+-- equipment
+INSERT INTO equipment (
+    plant_id,
+    equipment_name,
+    equipment_type,
+    status,
+    status_updated_at,
+    description
+)
+VALUES
+(1, '고압전동기 A', 'MOTOR', 'NORMAL', CURRENT_TIMESTAMP, '고압전동기 이상징후 감지 대상 설비'),
+(1, 'IGCC 튜브 A', 'TUBE', 'NORMAL', CURRENT_TIMESTAMP, '튜브 누설 감지 대상 설비');
 
-INSERT INTO anomaly_config (equipment_type, model_version, warning_threshold, danger_threshold, is_active)
-VALUES ('MOTOR', 'motor-v1', 0.7, 0.9, TRUE),
-       ('TUBE', 'tube-v1', 0.7, 0.9, TRUE);
+-- anomaly_config
+INSERT INTO anomaly_config (
+    equipment_type,
+    model_version,
+    warning_threshold,
+    danger_threshold,
+    is_active
+)
+VALUES
+('MOTOR', 'motor-v1', 0.7, 0.9, TRUE),
+('TUBE', 'tube-v1', 0.7, 0.9, TRUE);
+
+-- motor sensor threshold 예시
+INSERT INTO motor_sensor_threshold (
+    equipment_id,
+    config_id,
+    current_level,
+    sensor_tag,
+    window_start_at,
+    window_end_at,
+    lower_threshold,
+    upper_threshold
+)
+VALUES
+(1, 1, 'MID', 'ii1211a', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 100),
+(1, 1, 'MID', 'tt1228a', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 80),
+(1, 1, 'MID', 'yi1593aa', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 50);
+
+-- tube sensor threshold 예시
+INSERT INTO tube_sensor_threshold (
+    equipment_id,
+    config_id,
+    sensor_tag,
+    window_start_at,
+    window_end_at,
+    lower_threshold,
+    upper_threshold
+)
+VALUES
+(2, 2, 'tag_13tt0064', CURRENT_TIMESTAMP - INTERVAL '24 hours', CURRENT_TIMESTAMP, 0, 500),
+(2, 2, 'tag_15pdt0002a', CURRENT_TIMESTAMP - INTERVAL '24 hours', CURRENT_TIMESTAMP, 0, 300),
+(2, 2, 'bopc1_1_16200_fi_po041', CURRENT_TIMESTAMP - INTERVAL '24 hours', CURRENT_TIMESTAMP, 0, 200);

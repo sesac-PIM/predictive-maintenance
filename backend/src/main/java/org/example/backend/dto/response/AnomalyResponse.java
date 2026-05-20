@@ -1,0 +1,20 @@
+package org.example.backend.dto.response;
+
+import lombok.Builder;
+import lombok.Getter;
+
+import java.time.LocalDateTime;
+
+@Getter
+@Builder
+public class AnomalyResponse {
+
+    private String equipmentType;
+    private Long anomalyResultId;
+    private LocalDateTime measuredAt;
+    private Double anomalyScore;
+    private String severity;
+    private String eventType;
+    private Integer durationSec;
+    private String description;
+}
