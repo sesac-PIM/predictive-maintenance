@@ -165,7 +165,7 @@ CREATE TABLE anomaly_config (
 --------------------------------------------------
 -- 6. motor_sensor_threshold
 -- window 기반 동적 threshold
--- equipment + current_level + sensor_tag + window 기준
+-- equipment + sensor_tag + window 기준
 --------------------------------------------------
 CREATE TABLE motor_sensor_threshold (
     motor_sensor_threshold_id BIGSERIAL PRIMARY KEY,
@@ -395,10 +395,10 @@ CREATE INDEX idx_tube_sensor_equipment_measured
     ON tube_sensor_data(equipment_id, measured_at);
 
 CREATE INDEX idx_motor_threshold_latest
-    ON motor_sensor_threshold(equipment_id, config_id, current_level, window_end_at);
+    ON motor_sensor_threshold(equipment_id, config_id, window_end_at);
 
 CREATE INDEX idx_motor_threshold_window
-    ON motor_sensor_threshold(equipment_id, config_id, current_level, window_start_at, window_end_at);
+    ON motor_sensor_threshold(equipment_id, config_id, window_start_at, window_end_at);
 
 CREATE INDEX idx_tube_threshold_latest
     ON tube_sensor_threshold(equipment_id, config_id, window_end_at);
@@ -448,14 +448,15 @@ VALUES
 INSERT INTO equipment (
     plant_id,
     equipment_name,
+    unit_no,
     equipment_type,
     status,
     status_updated_at,
     description
 )
 VALUES
-(1, '고압전동기 A', 'MOTOR', 'NORMAL', CURRENT_TIMESTAMP, '고압전동기 이상징후 감지 대상 설비'),
-(1, 'IGCC 튜브 A', 'TUBE', 'NORMAL', CURRENT_TIMESTAMP, '튜브 누설 감지 대상 설비');
+(1, '고압전동기 A', 1, 'MOTOR', 'NORMAL', CURRENT_TIMESTAMP, '고압전동기 이상징후 감지 대상 설비'),
+(1, 'IGCC 튜브 A', 1, 'TUBE', 'NORMAL', CURRENT_TIMESTAMP, '튜브 누설 감지 대상 설비');
 
 -- anomaly_config
 INSERT INTO anomaly_config (
@@ -467,13 +468,12 @@ INSERT INTO anomaly_config (
 )
 VALUES
 ('MOTOR', 'motor-v1', 0.7, 0.9, TRUE),
-('TUBE', 'tube-v1', 0.7, 0.9, TRUE);
+('TUBE', 'tube-v1', 0.3, 0.4, TRUE);
 
 -- motor sensor threshold 예시
 INSERT INTO motor_sensor_threshold (
     equipment_id,
     config_id,
-    current_level,
     sensor_tag,
     window_start_at,
     window_end_at,
@@ -481,9 +481,9 @@ INSERT INTO motor_sensor_threshold (
     upper_threshold
 )
 VALUES
-(1, 1, 'MID', 'ii1211a', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 100),
-(1, 1, 'MID', 'tt1228a', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 80),
-(1, 1, 'MID', 'yi1593aa', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 50);
+(1, 1, 'ii1211a', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 100),
+(1, 1, 'tt1228a', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 80),
+(1, 1, 'yi1593aa', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 50);
 
 -- tube sensor threshold 예시
 INSERT INTO tube_sensor_threshold (
