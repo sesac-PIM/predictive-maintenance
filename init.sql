@@ -448,14 +448,15 @@ VALUES
 INSERT INTO equipment (
     plant_id,
     equipment_name,
+    unit_no,
     equipment_type,
     status,
     status_updated_at,
     description
 )
 VALUES
-(1, '고압전동기 A', 'MOTOR', 'NORMAL', CURRENT_TIMESTAMP, '고압전동기 이상징후 감지 대상 설비'),
-(1, 'IGCC 튜브 A', 'TUBE', 'NORMAL', CURRENT_TIMESTAMP, '튜브 누설 감지 대상 설비');
+(1, '고압전동기 A', 1, 'MOTOR', 'NORMAL', CURRENT_TIMESTAMP, '고압전동기 이상징후 감지 대상 설비'),
+(1, 'IGCC 튜브 A', 1, 'TUBE', 'NORMAL', CURRENT_TIMESTAMP, '튜브 누설 감지 대상 설비');
 
 -- anomaly_config
 INSERT INTO anomaly_config (
@@ -467,7 +468,7 @@ INSERT INTO anomaly_config (
 )
 VALUES
 ('MOTOR', 'motor-v1', 0.7, 0.9, TRUE),
-('TUBE', 'tube-v1', 0.7, 0.9, TRUE);
+('TUBE', 'tube-v1', 0.3, 0.4, TRUE);
 
 -- motor sensor threshold 예시
 INSERT INTO motor_sensor_threshold (
