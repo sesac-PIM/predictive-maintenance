@@ -7,5 +7,5 @@ import java.util.List;
 
 public interface MotorSensorDataRepository extends JpaRepository<MotorSensorData, Long> {
 
-    List<MotorSensorData> findByEquipmentId(Long equipmentId);
+    List<MotorSensorData> findByEquipmentIdOrderByMeasuredAtDesc(Long equipmentId);
 }
