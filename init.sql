@@ -46,6 +46,7 @@ CREATE TABLE equipment (
     equipment_id BIGSERIAL PRIMARY KEY,
     plant_id BIGINT NOT NULL,
     equipment_name VARCHAR(100) NOT NULL,
+    unit_no INT NOT NULL,
     equipment_type VARCHAR(20) NOT NULL,
     status VARCHAR(20) NOT NULL,
     status_updated_at TIMESTAMP,
