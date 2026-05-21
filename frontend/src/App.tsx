@@ -151,6 +151,18 @@ function formatApiTime(value?: string) {
   return date.toLocaleString('ko-KR', { hour12: false });
 }
 
+function hasBrokenText(value?: string) {
+  if (!value) return false;
+  return value.includes('�') || /\?{2,}/.test(value);
+}
+
+function readableAlertMessage(alert: ApiAlert, part?: string) {
+  if (alert.message && !hasBrokenText(alert.message)) return alert.message;
+  const severity = normalizeSeverity(undefined, alert.severity || 'NORMAL');
+  const label = severity === 'DANGER' ? '위험' : severity === 'WARNING' ? '주의' : '정상';
+  return `${part ? `${part} ` : ''}${label} 알림이 발생했습니다.`;
+}
+
 function getEquipmentName(equipment: ApiEquipment) {
   return equipment.equipmentName || equipment.equipmentname || '';
 }
@@ -246,6 +258,7 @@ const KakaoPlantMap = ({ plants, selectedPlantId, onPlantClick }: { plants: UiPl
 const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) => {
   const contributions: ApiContribution[] = log.contributions || [];
   const alerts: ApiAlert[] = log.alerts || [];
+  const part = log.part || '';
 
   return (
     <motion.div
@@ -302,23 +315,29 @@ const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) =
             <span className="material-symbols-outlined text-sm text-primary">analytics</span>
             센서별 이상 기여도 (Contribution)
           </h4>
-          <div className="h-48 w-full mb-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={contributions} layout="vertical" margin={{ left: 10, right: 30 }}>
-                <XAxis type="number" domain={[0, 1]} hide />
-                <YAxis dataKey="sensorTag" type="category" stroke="#87929A" fontSize={10} width={100} />
-                <Tooltip
-                  cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                  contentStyle={{ backgroundColor: '#1B2024', border: '1px solid #3E484F', fontSize: '11px', borderRadius: '8px' }}
-                />
-                <Bar dataKey="contributionScore" radius={[0, 4, 4, 0]}>
-                  {contributions.map((_entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={index === 0 ? '#EF4444' : '#F97316'} fillOpacity={0.8 - index * 0.15} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {contributions.length === 0 ? (
+            <div className="h-48 w-full mb-4 rounded-xl border border-dashed border-outline-variant/30 bg-surface-container-highest/10 flex items-center justify-center px-6 text-center">
+              <p className="text-xs text-on-surface-variant">선택한 로그의 센서 기여도 데이터가 없습니다.</p>
+            </div>
+          ) : (
+            <div className="h-48 w-full mb-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={contributions} layout="vertical" margin={{ left: 10, right: 30 }}>
+                  <XAxis type="number" domain={[0, 1]} hide />
+                  <YAxis dataKey="sensorTag" type="category" stroke="#87929A" fontSize={10} width={100} />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                    contentStyle={{ backgroundColor: '#1B2024', border: '1px solid #3E484F', fontSize: '11px', borderRadius: '8px' }}
+                  />
+                  <Bar dataKey="contributionScore" radius={[0, 4, 4, 0]}>
+                    {contributions.map((_entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={index === 0 ? '#EF4444' : '#F97316'} fillOpacity={0.8 - index * 0.15} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
           <div className="space-y-2">
             {contributions.map((c, i) => (
               <div key={c.sensorTag} className="flex items-center justify-between p-3 bg-surface-container-low rounded border border-outline-variant/10 text-xs">
@@ -344,7 +363,11 @@ const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) =
             최종 Slack 알림 발송 현황
           </h4>
           <div className="space-y-3">
-            {alerts.map((alert) => (
+            {alerts.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-[#4A154B]/25 bg-[#4A154B]/5 p-5 text-center">
+                <p className="text-xs text-on-surface-variant">선택한 로그의 Slack 알림 발송 이력이 없습니다.</p>
+              </div>
+            ) : alerts.map((alert) => (
               <div key={alert.alertId} className="flex gap-4 p-4 rounded-lg bg-[#4A154B]/5 border border-[#4A154B]/20">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                   alert.sendStatus === 'SUCCESS' ? 'bg-[#4A154B]/10 text-[#4A154B]' : 'bg-red-500/10 text-red-500'
@@ -361,7 +384,7 @@ const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) =
                       {alert.sendStatus === 'SUCCESS' ? '전송 완료' : '전송 실패'}
                     </span>
                   </div>
-                  <p className="text-[11px] font-mono text-on-surface-variant mb-2">{alert.message}</p>
+                  <p className="text-[11px] font-mono text-on-surface-variant mb-2">{readableAlertMessage(alert, part)}</p>
                   <p className="text-[9px] text-outline text-right font-data-sm opacity-50">{formatApiTime(alert.occurredAt)} KST</p>
                 </div>
               </div>
@@ -716,6 +739,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   const [plants, setPlants] = useState<UiPlant[]>([]);
   const [equipments, setEquipments] = useState<ApiEquipment[]>([]);
   const [latestAnomalies, setLatestAnomalies] = useState<Record<number, ApiAnomaly | undefined>>({});
+  const [contributionsByAnomaly, setContributionsByAnomaly] = useState<Record<number, ApiContribution[]>>({});
   const [alertLogs, setAlertLogs] = useState<ApiAlert[]>([]);
 
   useEffect(() => {
@@ -758,6 +782,32 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
     })).then(entries => setLatestAnomalies(Object.fromEntries(entries)));
   }, [equipments]);
 
+  useEffect(() => {
+    if (alertLogs.length === 0) {
+      setContributionsByAnomaly({});
+      return;
+    }
+
+    const uniqueTargets = alertLogs
+      .filter((alert): alert is ApiAlert & { equipmentId: number; anomalyResultId: number } => Boolean(alert.equipmentId && alert.anomalyResultId))
+      .filter((alert, index, list) => list.findIndex(item => item.anomalyResultId === alert.anomalyResultId) === index);
+
+    if (uniqueTargets.length === 0) {
+      setContributionsByAnomaly({});
+      return;
+    }
+
+    Promise.all(uniqueTargets.map(async alert => {
+      try {
+        const list = await apiRequest<ApiContribution[]>(`/api/equipments/${alert.equipmentId}/anomalies/${alert.anomalyResultId}/contributions`);
+        return [alert.anomalyResultId, list] as const;
+      } catch (error) {
+        console.error(error);
+        return [alert.anomalyResultId, []] as const;
+      }
+    })).then(entries => setContributionsByAnomaly(Object.fromEntries(entries)));
+  }, [alertLogs]);
+
   const unitCount = useMemo(() => {
     const unitNos = equipments.map(e => e.unitNo).filter((n): n is number => typeof n === 'number');
     return unitNos.length > 0 ? Math.max(...unitNos) : 0;
@@ -793,6 +843,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       const unitNo = equipment?.unitNo || 1;
       const type = (alert.anomalyResultType || equipment?.equipmentType || '').toUpperCase() === 'MOTOR' ? 'motor' : 'gasifier';
       const score = latestAnomalies[alert.equipmentId || -1]?.anomalyScore;
+      const part = type === 'motor' ? '고압전동기' : '가스화기';
       return {
         id: alert.alertId || index + 1,
         time: formatApiTime(alert.occurredAt),
@@ -800,11 +851,13 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         score: score ?? 0,
         location: `${plant.name} ${unitNo}호기`,
         type,
-        part: type === 'motor' ? '고압전동기' : '가스화기',
-        message: alert.message,
+        part,
+        message: readableAlertMessage(alert, part),
+        contributions: alert.anomalyResultId ? (contributionsByAnomaly[alert.anomalyResultId] || []) : [],
+        alerts: [{ ...alert, message: readableAlertMessage(alert, part) }],
       };
     });
-  }, [alertLogs, equipments, plant.name]);
+  }, [alertLogs, equipments, plant.name, contributionsByAnomaly, latestAnomalies]);
 
   return (
     <div className="bg-background text-[#dee3e8] font-sans overflow-hidden h-screen flex flex-col relative">
@@ -1089,7 +1142,7 @@ const HeaderActions = () => {
         id: alert.alertId || index + 1,
         type: normalizeSeverity(undefined, alert.severity || 'NORMAL'),
         title: `${alert.channel || 'Slack'} 알림 ${alert.sendStatus === 'FAILED' ? '실패' : '전송 완료'}`,
-        desc: alert.message || '알림 메시지가 없습니다.',
+        desc: readableAlertMessage(alert),
         time: formatApiTime(alert.occurredAt).split(' ').slice(-1)[0] || '',
       }))))
       .catch(() => undefined);
@@ -1136,7 +1189,7 @@ const HeaderActions = () => {
                 {alerts.length === 0 ? (
                   <div className="px-4 py-8 text-center text-xs text-gray-500">표시할 알림이 없습니다.</div>
                 ) : alerts.map(alert => (
-                  <div key={alert.alertId} className="px-4 py-3 border-b border-gray-800/50 hover:bg-white/[0.03] transition-colors">
+                  <div key={alert.id} className="px-4 py-3 border-b border-gray-800/50 hover:bg-white/[0.03] transition-colors">
                     <div className="flex justify-between gap-3 mb-1">
                       <span className={`text-[10px] font-bold ${alert.type === 'DANGER' ? 'text-red-400' : alert.type === 'WARNING' ? 'text-orange-400' : 'text-green-400'}`}>{alert.type}</span>
                       <span className="text-[10px] text-gray-500 font-mono">{alert.time}</span>
