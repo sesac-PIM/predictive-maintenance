@@ -1,71 +1,116 @@
 import pandas as pd
-import numpy as np
 import psycopg2
-from datetime import datetime, timedelta
 from psycopg2.extras import execute_values
-import os
 
-# 1. DB 설정
-DB_CONFIG = {
-    "host": "localhost",
-    "database": "predictive_maintenance",
-    "user": "postgres",
-    "password": "1234",
-    "port": "5432"
-}
+from runtime_config import DB_CONFIG, DATA_PATH, resolve_tube_equipment_id
 
-# 파일 경로 (절대경로로 지정 - 실행 위치 무관)
-BASE_DIR = r"C:\Users\PC\Documents\project\final_project"
-FILE_PATH = os.path.join(BASE_DIR, 'IGCC 튜브누설 고장 데이터셋.xlsx')
 
-EQUIPMENT_ID = 2
+REQUIRED_COLUMNS = [
+    "time",
+    "SGC OUT TEMP",
+    "HPHT FSH FLTR DP-A",
+    "GF VSS PRESS TAP/ANSP DP",
+    "MP Steam Flow",
+    "MP STM DRUM IN FW FLW",
+    "MP Balance",
+    "Heat Duty",
+    "IG Load %",
+    "Demi Water Trans Pump Discharge Flow",
+]
+
+NORMAL_SHEET_CANDIDATES = ["정상 데이터", "정상데이터", "normal", "Normal"]
+ABNORMAL_SHEET_CANDIDATES = ["비정상 데이터", "비정상데이터", "abnormal", "Abnormal"]
+
+
+def _pick_sheet(sheet_names, candidates):
+    normalized = {name.replace(" ", "").lower(): name for name in sheet_names}
+    for candidate in candidates:
+        found = normalized.get(candidate.replace(" ", "").lower())
+        if found:
+            return found
+    return None
+
+
+def _convert_time(series):
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_datetime(series, unit="D", origin="1899-12-30")
+    return pd.to_datetime(series)
+
+
+def _load_dataset():
+    print(f"Reading Excel: {DATA_PATH}")
+    if not DATA_PATH.exists():
+        raise FileNotFoundError(
+            f"TUBE data file not found: {DATA_PATH}. "
+            "Place the dataset in ai/data/tube or set TUBE_DATA_PATH."
+        )
+
+    workbook = pd.ExcelFile(DATA_PATH)
+    normal_sheet = _pick_sheet(workbook.sheet_names, NORMAL_SHEET_CANDIDATES)
+    abnormal_sheet = _pick_sheet(workbook.sheet_names, ABNORMAL_SHEET_CANDIDATES)
+    data_sheet = abnormal_sheet or normal_sheet or workbook.sheet_names[0]
+
+    df = pd.read_excel(DATA_PATH, sheet_name=data_sheet)
+    missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required TUBE columns: {missing}")
+
+    df = df[REQUIRED_COLUMNS].copy()
+    df["time"] = _convert_time(df["time"])
+    df = df.dropna(subset=REQUIRED_COLUMNS).sort_values("time").reset_index(drop=True)
+
+    if normal_sheet and abnormal_sheet:
+        df_normal = pd.read_excel(DATA_PATH, sheet_name=normal_sheet)
+        if "time" not in df_normal.columns:
+            raise ValueError(f"Missing time column in normal sheet: {normal_sheet}")
+
+        df_normal["time"] = _convert_time(df_normal["time"])
+        normal_start = df_normal["time"].min()
+        normal_end = df_normal["time"].max()
+        print(f"Normal data range: {normal_start} ~ {normal_end}")
+        df = df[~df["time"].between(normal_start, normal_end)].reset_index(drop=True)
+    else:
+        print(f"Using sheet '{data_sheet}' as monitoring data.")
+
+    print(f"Rows to insert into DB: {len(df)}")
+    if len(df) > 0:
+        print(f"Monitoring range: {df['time'].min()} ~ {df['time'].max()}")
+
+    return df
+
 
 def load_and_insert():
-    print(f"Reading Excel: {FILE_PATH}")
-
-    # 정상 데이터 시트 로드 (시간 범위 확인용)
-    df_normal   = pd.read_excel(FILE_PATH, sheet_name='정상 데이터')
-    df_abnormal = pd.read_excel(FILE_PATH, sheet_name='비정상 데이터')
-
-    # 시간 변환 (Excel Serial Date → datetime)
-    df_normal['time']   = pd.to_datetime(df_normal['time'],   unit='D', origin='1899-12-30')
-    df_abnormal['time'] = pd.to_datetime(df_abnormal['time'], unit='D', origin='1899-12-30')
-
-    # 정상 데이터 기간 확인
-    normal_start = df_normal['time'].min()
-    normal_end   = df_normal['time'].max()
-    print(f"정상 데이터 기간: {normal_start} ~ {normal_end}")
-
-    # 비정상 시트에서 정상 데이터 기간 제외 → 실제 모니터링 구간만
-    df = df_abnormal[~df_abnormal['time'].between(normal_start, normal_end)].sort_values('time').reset_index(drop=True)
-    print(f"DB에 적재할 행수 (정상 구간 제외 후): {len(df)}")
-    if len(df) > 0:
-        print(f"모니터링 구간: {df['time'].min()} ~ {df['time'].max()}")
+    df = _load_dataset()
+    if df.empty:
+        print("No monitoring rows to insert.")
+        return
 
     conn = None
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()
+        equipment_id = resolve_tube_equipment_id(cur)
 
         print("Clearing existing tube_sensor_data...")
-        cur.execute("DELETE FROM tube_sensor_data WHERE equipment_id = %s", (EQUIPMENT_ID,))
+        cur.execute("DELETE FROM tube_sensor_data WHERE equipment_id = %s", (equipment_id,))
 
         data_to_insert = []
         for _, row in df.iterrows():
-            record = (
-                EQUIPMENT_ID,
-                row['time'],
-                row['SGC OUT TEMP'],                        # tag_13tt0064
-                row['HPHT FSH FLTR DP-A'],                  # tag_15pdt0002a
-                row['GF VSS PRESS TAP/ANSP DP'],            # tag_13pdt0067
-                row['MP Steam Flow'],                        # tag_13fi0044
-                row['MP STM DRUM IN FW FLW'],                # tag_13ffyc0046
-                row['MP Balance'],                           # tag_13fy0045
-                row['Heat Duty'],                            # tag_13jyi9001
-                row['IG Load %'],                            # tag_10ind0001
-                row['Demi Water Trans Pump Discharge Flow']  # bopc1_1_16200_fi_po041
+            data_to_insert.append(
+                (
+                    equipment_id,
+                    row["time"],
+                    row["SGC OUT TEMP"],
+                    row["HPHT FSH FLTR DP-A"],
+                    row["GF VSS PRESS TAP/ANSP DP"],
+                    row["MP Steam Flow"],
+                    row["MP STM DRUM IN FW FLW"],
+                    row["MP Balance"],
+                    row["Heat Duty"],
+                    row["IG Load %"],
+                    row["Demi Water Trans Pump Discharge Flow"],
+                )
             )
-            data_to_insert.append(record)
 
         query = """
             INSERT INTO tube_sensor_data (
@@ -77,14 +122,16 @@ def load_and_insert():
         """
         execute_values(cur, query, data_to_insert)
         conn.commit()
-        print(f"[SUCCESS] {len(df)} rows → tube_sensor_data (equipment_id={EQUIPMENT_ID})")
+        print(f"[SUCCESS] {len(df)} rows -> tube_sensor_data (equipment_id={equipment_id})")
 
     except Exception as e:
-        if conn: conn.rollback()
+        if conn:
+            conn.rollback()
         print(f"[ERROR] {e}")
     finally:
-        if conn: conn.close()
+        if conn:
+            conn.close()
+
 
 if __name__ == "__main__":
     load_and_insert()
-

@@ -319,4 +319,3 @@ def execute_pipeline() -> None:
 
 if __name__ == "__main__":
     execute_pipeline()
-

@@ -148,4 +148,3 @@ def load_and_insert() -> None:
 
 if __name__ == "__main__":
     load_and_insert()
-
