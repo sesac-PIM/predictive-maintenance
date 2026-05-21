@@ -13,6 +13,8 @@ from runtime_config import (
     DB_CONFIG,
     MOTOR_ALERT_API_BASE_URL,
     MOTOR_ALERT_API_TOKEN,
+    MOTOR_ALERT_PASSWORD,
+    MOTOR_ALERT_USERNAME,
     MOTOR_CONFIG_ID,
     MOTOR_EQUIPMENT_ID,
     MOTOR_MODEL_DIR,
@@ -167,9 +169,10 @@ def fetch_window(conn, equipment_id: int) -> pd.DataFrame:
 
 
 def send_alert(anomaly_result_id: int) -> None:
-    headers = {}
-    if MOTOR_ALERT_API_TOKEN:
-        headers["Authorization"] = f"Bearer {MOTOR_ALERT_API_TOKEN}"
+    headers = get_alert_headers()
+    if not headers:
+        print("[WARN] Backend alert auth is unavailable. Skipping backend alert API call.")
+        return
 
     try:
         response = requests.post(
@@ -181,6 +184,26 @@ def send_alert(anomaly_result_id: int) -> None:
         print(f"Alert API sent for motor anomaly_result_id={anomaly_result_id}")
     except Exception as exc:
         print(f"[WARN] Alert API call skipped/failed: {exc}")
+
+
+def get_alert_headers():
+    if MOTOR_ALERT_API_TOKEN:
+        return {"Authorization": f"Bearer {MOTOR_ALERT_API_TOKEN}"}
+
+    try:
+        response = requests.post(
+            f"{MOTOR_ALERT_API_BASE_URL.rstrip('/')}/api/auth/login",
+            json={"username": MOTOR_ALERT_USERNAME, "password": MOTOR_ALERT_PASSWORD},
+            timeout=5,
+        )
+        response.raise_for_status()
+        access_token = response.json().get("accessToken")
+        if not access_token:
+            raise RuntimeError("Login response did not include accessToken.")
+        return {"Authorization": f"Bearer {access_token}"}
+    except Exception as exc:
+        print(f"[WARN] Could not get backend alert token: {exc}")
+        return None
 
 
 def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_threshold: float, danger_threshold: float) -> None:

@@ -26,6 +26,10 @@ TUBE_WINDOW_SIZE=24
 
 BACKEND_BASE_URL=http://localhost:8080
 TUBE_ALERT_API_TOKEN=
+AI_ALERT_USERNAME=codex_admin
+AI_ALERT_PASSWORD=1234
 ```
 
-If `TUBE_ALERT_API_TOKEN` is empty, inference still saves anomaly results and sensor contributions to DB, but it skips backend alert API calls.
+If `TUBE_ALERT_API_TOKEN` is empty, inference logs in through `/api/auth/login` using
+`TUBE_ALERT_USERNAME`/`TUBE_ALERT_PASSWORD` or the shared `AI_ALERT_USERNAME`/`AI_ALERT_PASSWORD`
+values and uses the issued JWT for backend alert API calls.
