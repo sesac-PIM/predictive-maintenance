@@ -469,33 +469,3 @@ INSERT INTO anomaly_config (
 VALUES
 ('MOTOR', 'motor-v1', 0.7, 0.9, TRUE),
 ('TUBE', 'tube-v1', 0.3, 0.4, TRUE);
-
--- motor sensor threshold 예시
-INSERT INTO motor_sensor_threshold (
-    equipment_id,
-    config_id,
-    sensor_tag,
-    window_start_at,
-    window_end_at,
-    lower_threshold,
-    upper_threshold
-)
-VALUES
-(1, 1, 'ii1211a', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 100),
-(1, 1, 'tt1228a', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 80),
-(1, 1, 'yi1593aa', CURRENT_TIMESTAMP - INTERVAL '60 minutes', CURRENT_TIMESTAMP, 0, 50);
-
--- tube sensor threshold 예시
-INSERT INTO tube_sensor_threshold (
-    equipment_id,
-    config_id,
-    sensor_tag,
-    window_start_at,
-    window_end_at,
-    lower_threshold,
-    upper_threshold
-)
-VALUES
-(2, 2, 'tag_13tt0064', CURRENT_TIMESTAMP - INTERVAL '24 hours', CURRENT_TIMESTAMP, 0, 500),
-(2, 2, 'tag_15pdt0002a', CURRENT_TIMESTAMP - INTERVAL '24 hours', CURRENT_TIMESTAMP, 0, 300),
-(2, 2, 'bopc1_1_16200_fi_po041', CURRENT_TIMESTAMP - INTERVAL '24 hours', CURRENT_TIMESTAMP, 0, 200);
