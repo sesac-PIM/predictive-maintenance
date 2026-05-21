@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 760" role="img" aria-label="가스화기 튜브 공정 도면">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1d2730" stroke-width="1"/>
+    </pattern>
+    <filter id="cyanGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="pinkGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="orangeGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrowCyan" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#23e8ff"/>
+    </marker>
+    <marker id="arrowPink" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#ff3f78"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,4 L0,8 Z" fill="#ff9f16"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="760" fill="#080d13"/>
+  <rect width="1600" height="760" fill="url(#grid)" opacity="0.65"/>
+
+  <g font-family="Inter, Arial, sans-serif" font-weight="700">
+    <rect x="510" y="8" width="180" height="36" rx="18" fill="#0b1016" stroke="#24313d"/>
+    <text x="548" y="31" fill="#f7fbff" font-size="14">차가운 물 (Water)</text>
+    <line x1="525" y1="23" x2="555" y2="23" stroke="#23e8ff" stroke-width="4" filter="url(#cyanGlow)"/>
+
+    <rect x="730" y="8" width="150" height="36" rx="18" fill="#0b1016" stroke="#24313d"/>
+    <text x="770" y="31" fill="#f7fbff" font-size="14">스팀 (Steam)</text>
+    <line x1="744" y1="23" x2="774" y2="23" stroke="#ff3f78" stroke-width="4" filter="url(#pinkGlow)"/>
+
+    <rect x="920" y="8" width="220" height="36" rx="18" fill="#0b1016" stroke="#24313d"/>
+    <text x="965" y="31" fill="#f7fbff" font-size="14">뜨거운 가스 (Hot Gas)</text>
+    <line x1="934" y1="23" x2="964" y2="23" stroke="#ff9f16" stroke-width="4" filter="url(#orangeGlow)"/>
+  </g>
+
+  <g>
+    <rect x="324" y="55" width="126" height="490" rx="58" fill="#141b25" stroke="#526272"/>
+    <rect x="340" y="162" width="105" height="260" rx="12" fill="none" stroke="#344454" stroke-dasharray="7 8"/>
+    <ellipse cx="390" cy="323" rx="60" ry="140" fill="none" stroke="#ff9f16" stroke-width="4" stroke-dasharray="8 12" opacity="0.7"/>
+    <text x="348" y="95" fill="#ffffff" font-size="24" font-weight="800">E-1301</text>
+    <text x="344" y="122" fill="#28e8ff" font-size="14" font-weight="700">합성가스 냉각기</text>
+  </g>
+
+  <polyline points="76,321 322,321 1010,321 1570,321" fill="none" stroke="#ff9f16" stroke-width="7" marker-mid="url(#arrowOrange)" marker-end="url(#arrowOrange)" filter="url(#orangeGlow)"/>
+  <text x="78" y="307" fill="#ff9f16" font-size="14" font-weight="700">From Gasifier</text>
+  <text x="1470" y="307" fill="#ff9f16" font-size="14" font-weight="700">To Filter</text>
+
+  <polyline points="408,435 640,435 865,435 1172,435" fill="none" stroke="#23e8ff" stroke-width="7" marker-mid="url(#arrowCyan)" filter="url(#cyanGlow)"/>
+  <polyline points="1348,742 1348,690 1348,578 1188,578 1188,488" fill="none" stroke="#23e8ff" stroke-width="7" marker-mid="url(#arrowCyan)" marker-end="url(#arrowCyan)" filter="url(#cyanGlow)"/>
+
+  <polyline points="354,286 426,235 350,185 420,133 1080,133 1080,435 1390,435 1570,435" fill="none" stroke="#ff3f78" stroke-width="7" marker-mid="url(#arrowPink)" marker-end="url(#arrowPink)" filter="url(#pinkGlow)"/>
+
+  <g>
+    <circle cx="678" cy="435" r="30" fill="#536473" stroke="#9caebc" stroke-width="5"/>
+    <circle cx="678" cy="435" r="21" fill="#0ee000" filter="url(#cyanGlow)"/>
+    <text x="650" y="500" fill="#ffffff" font-size="16" font-weight="800">P-1301</text>
+  </g>
+
+  <g>
+    <rect x="950" y="386" width="275" height="100" rx="50" fill="#121b26" stroke="#435365"/>
+    <rect x="1154" y="386" width="72" height="100" rx="0" fill="#070b10" opacity="0.65"/>
+    <text x="1036" y="437" fill="#ffffff" font-size="26" font-weight="900">V-1304</text>
+    <text x="1028" y="462" fill="#ffffff" font-size="12">MP STEAM DRUM</text>
+  </g>
+
+  <g font-family="Inter, Arial, sans-serif" font-weight="800">
+    <rect x="292" y="18" width="210" height="44" rx="8" fill="#121922" stroke="#536170"/>
+    <text x="310" y="47" fill="#ffffff" font-size="16">7. 가스화기 열부하 (kW)</text>
+
+    <rect x="30" y="248" width="270" height="45" rx="8" fill="#121922" stroke="#536170"/>
+    <path d="M30 248 h6 v45 h-6 z" fill="#ff9f16"/>
+    <text x="50" y="276" fill="#ffffff" font-size="16">3. 가스화기 내부 압력 차 (mbar)</text>
+
+    <rect x="1355" y="248" width="232" height="45" rx="8" fill="#121922" stroke="#536170"/>
+    <path d="M1355 248 h6 v45 h-6 z" fill="#ff9f16"/>
+    <text x="1375" y="276" fill="#ffffff" font-size="16">2. 석탄재 필터 압력 차 (mbar)</text>
+
+    <rect x="515" y="274" width="275" height="44" rx="8" fill="#121922" stroke="#536170"/>
+    <path d="M515 274 h6 v44 h-6 z" fill="#ff9f16"/>
+    <text x="540" y="302" fill="#ffffff" font-size="16">1. 합성가스 쿨러 출구측 온도 (℃)</text>
+
+    <rect x="1355" y="372" width="225" height="45" rx="8" fill="#121922" stroke="#536170"/>
+    <path d="M1355 372 h6 v45 h-6 z" fill="#ff3f78"/>
+    <text x="1375" y="400" fill="#ffffff" font-size="16">4. 메인 스팀 배출량 (OUT)</text>
+
+    <rect x="982" y="505" width="220" height="70" rx="8" fill="#121922" stroke="#ff3f78" stroke-width="2"/>
+    <text x="1000" y="538" fill="#ffffff" font-size="17">6. 종합 수분 스팀 밸런스</text>
+    <text x="998" y="563" fill="#ff3f78" font-size="12">* 핵심 누설 탐지 지표 (IN - OUT)</text>
+
+    <rect x="1245" y="502" width="230" height="45" rx="8" fill="#121922" stroke="#23e8ff"/>
+    <path d="M1245 502 h6 v45 h-6 z" fill="#23e8ff"/>
+    <text x="1265" y="530" fill="#ffffff" font-size="16">5. 메인 스팀 급수 유량 (IN)</text>
+
+    <rect x="1355" y="696" width="235" height="45" rx="8" fill="#121922" stroke="#23e8ff"/>
+    <path d="M1355 696 h6 v45 h-6 z" fill="#23e8ff"/>
+    <text x="1375" y="724" fill="#ffffff" font-size="16">9. 외부 급수 유입량 (m³/h)</text>
+
+    <rect x="30" y="350" width="200" height="45" rx="8" fill="#121922" stroke="#536170"/>
+    <text x="50" y="378" fill="#ffffff" font-size="16">8. 가스화기 부하율 (%)</text>
+
+    <rect x="324" y="490" width="135" height="34" rx="5" fill="#0d1218" stroke="#ff3f78"/>
+    <text x="337" y="512" fill="#ff3f78" font-size="14">⚠ 튜브 누설 포인트</text>
+  </g>
+</svg>
