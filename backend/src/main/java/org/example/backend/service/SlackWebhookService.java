@@ -13,9 +13,9 @@ public class SlackWebhookService {
     public void sendMessage(String message) {
         String webhookUrl = System.getenv("SLACK_WEBHOOK_URL");
 
-        System.out.println("SLACK_WEBHOOK_URL = " + webhookUrl);
         if (webhookUrl == null || webhookUrl.isBlank()) {
-            throw new IllegalStateException("SLACK_WEBHOOK_URL 환경변수가 설정되지 않았습니다.");
+            System.out.println("[WARN] SLACK_WEBHOOK_URL is not set. Skipping Slack webhook send.");
+            return;
         }
 
         Map<String, String> payload = Map.of("text", message);

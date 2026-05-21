@@ -1,0 +1,83 @@
+﻿import os
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(os.getenv("PROJECT_ROOT", Path(__file__).resolve().parents[3])).resolve()
+
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST", "localhost"),
+    "database": os.getenv("DB_NAME", "predictive_maintenance"),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", "1234"),
+    "port": os.getenv("DB_PORT", "5432"),
+}
+
+TUBE_UNIT_NO = int(os.getenv("TUBE_UNIT_NO", "1"))
+TUBE_EQUIPMENT_NAME = os.getenv("TUBE_EQUIPMENT_NAME")
+WINDOW_SIZE = int(os.getenv("TUBE_WINDOW_SIZE", "24"))
+
+DATA_PATH = Path(
+    os.getenv(
+        "TUBE_DATA_PATH",
+        PROJECT_ROOT / "ai" / "data" / "tube" / "IGCC 튜브누설 고장 데이터셋.xlsx",
+    )
+).resolve()
+MODEL_PATH = Path(
+    os.getenv("TUBE_MODEL_PATH", PROJECT_ROOT / "ai" / "models" / "tube" / "tube_model_v11.pth")
+).resolve()
+SCALER_PATH = Path(
+    os.getenv("TUBE_SCALER_PATH", PROJECT_ROOT / "ai" / "models" / "tube" / "tube_scaler_v11.pkl")
+).resolve()
+
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip("/")
+ALERT_API_TOKEN = os.getenv("TUBE_ALERT_API_TOKEN", "")
+
+
+def resolve_tube_equipment_id(cur):
+    if TUBE_EQUIPMENT_NAME:
+        cur.execute(
+            """
+            SELECT equipment_id
+            FROM equipment
+            WHERE equipment_type = 'TUBE'
+              AND equipment_name = %s
+            ORDER BY equipment_id
+            LIMIT 1
+            """,
+            (TUBE_EQUIPMENT_NAME,),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT equipment_id
+            FROM equipment
+            WHERE equipment_type = 'TUBE'
+              AND unit_no = %s
+            ORDER BY equipment_id
+            LIMIT 1
+            """,
+            (TUBE_UNIT_NO,),
+        )
+
+    row = cur.fetchone()
+    if not row:
+        target = f"equipment_name={TUBE_EQUIPMENT_NAME}" if TUBE_EQUIPMENT_NAME else f"unit_no={TUBE_UNIT_NO}"
+        raise RuntimeError(f"TUBE equipment not found ({target}). Check equipment seed data.")
+    return row[0]
+
+
+def resolve_tube_config_id(cur):
+    cur.execute(
+        """
+        SELECT config_id
+        FROM anomaly_config
+        WHERE equipment_type = 'TUBE'
+          AND is_active = TRUE
+        ORDER BY config_id DESC
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    if not row:
+        raise RuntimeError("Active TUBE anomaly_config not found.")
+    return row[0]

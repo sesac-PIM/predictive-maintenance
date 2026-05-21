@@ -7,22 +7,17 @@ import joblib
 import psycopg2
 from sklearn.preprocessing import MinMaxScaler
 from model_arch import TransformerAutoencoder
-
-# 1. DB 설정
-DB_CONFIG = {
-    "host": "localhost",
-    "database": "predictive_maintenance",
-    "user": "postgres",
-    "password": "1234",
-    "port": "5432"
-}
+from runtime_config import DB_CONFIG, MODEL_PATH, SCALER_PATH, WINDOW_SIZE, resolve_tube_equipment_id
 
 def train_model():
     # [1] 데이터 로드
     conn = psycopg2.connect(**DB_CONFIG)
+    cur = conn.cursor()
+    equipment_id = resolve_tube_equipment_id(cur)
     print("Fetching training data from DB...")
-    query = "SELECT * FROM tube_sensor_data ORDER BY measured_at ASC"
-    df = pd.read_sql(query, conn)
+    query = "SELECT * FROM tube_sensor_data WHERE equipment_id = %s ORDER BY measured_at ASC"
+    df = pd.read_sql(query, conn, params=(equipment_id,))
+    cur.close()
     conn.close()
 
     # [2] 보고서 로직: 파생 변수 2개 생성 (실시간 계산)
@@ -44,11 +39,12 @@ def train_model():
     # [3] 스케일링 및 저장
     scaler = MinMaxScaler()
     data_scaled = scaler.fit_transform(data)
-    joblib.dump(scaler, 'modeling/tube_scaler_v11.pkl')
-    print("Scaler saved as modeling/tube_scaler_v11.pkl")
+    SCALER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(scaler, SCALER_PATH)
+    print(f"Scaler saved as {SCALER_PATH}")
 
     # [4] 시퀀스 데이터 생성 (Window=24)
-    def create_sequences(data, seq_length=24):
+    def create_sequences(data, seq_length=WINDOW_SIZE):
         sequences = []
         for i in range(len(data) - seq_length + 1):
             sequences.append(data[i:i+seq_length])
@@ -74,8 +70,9 @@ def train_model():
             print(f"Epoch [{epoch+1}/100], Loss: {loss.item():.6f}")
 
     # [6] 모델 저장
-    torch.save(model.state_dict(), 'modeling/tube_model_v11.pth')
-    print("[SUCCESS] 11-variable model saved as modeling/tube_model_v11.pth")
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), MODEL_PATH)
+    print(f"[SUCCESS] 11-variable model saved as {MODEL_PATH}")
 
 if __name__ == "__main__":
     train_model()
