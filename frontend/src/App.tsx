@@ -108,8 +108,32 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY || ''; // 카카오맵 JavaScript 키(.env) 자리
 const TUBE_DIAGRAM_SRC = '/tube-diagram.svg';
 
-async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+function clearStoredToken() {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('token');
+}
+
+function isJwtExpired(token: string) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1] || ''));
+    return typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+}
+
+function getStoredAccessToken() {
   const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+  if (!token) return null;
+  if (isJwtExpired(token)) {
+    clearStoredToken();
+    return null;
+  }
+  return token;
+}
+
+async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getStoredAccessToken();
   const headers = new Headers(options.headers || {});
   headers.set('Content-Type', 'application/json');
   const isAuthRequest = path.startsWith('/api/auth/');
@@ -121,6 +145,10 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
   });
 
   if (!response.ok) {
+    if ((response.status === 401 || response.status === 403) && !isAuthRequest) {
+      clearStoredToken();
+      window.location.reload();
+    }
     const text = await response.text().catch(() => '');
     throw new Error(text || `API 요청 실패: ${response.status}`);
   }
@@ -1357,32 +1385,47 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
       setSensorRows([]);
       return;
     }
-    apiRequest<ApiAnomaly[]>(`/api/equipments/${activeEquipment.equipmentId}/anomalies`)
-      .then(async anomalies => {
+
+    let cancelled = false;
+    const loadEquipmentData = async () => {
+      try {
+        const [anomalies, sensors] = await Promise.all([
+          apiRequest<ApiAnomaly[]>(`/api/equipments/${activeEquipment.equipmentId}/anomalies`),
+          apiRequest<ApiSensorRow[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-data`),
+        ]);
+        if (cancelled) return;
+
         const sorted = sortAnomaliesDesc(anomalies);
         const latest = sorted[0] || null;
         setAnomalyRows(sorted);
         setLatestAnomaly(latest);
+        setSensorRows(sensors);
+
         if (latest) {
           try {
             const list = await apiRequest<ApiContribution[]>(`/api/equipments/${activeEquipment.equipmentId}/anomalies/${latest.anomalyResultId}/contributions`);
-            setContributions(list);
+            if (!cancelled) setContributions(list);
           } catch {
-            setContributions([]);
+            if (!cancelled) setContributions([]);
           }
         } else {
           setContributions([]);
         }
-      })
-      .catch(() => {
+      } catch {
+        if (cancelled) return;
         setLatestAnomaly(null);
         setAnomalyRows([]);
         setContributions([]);
-      });
+        setSensorRows([]);
+      }
+    };
 
-    apiRequest<ApiSensorRow[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-data`)
-      .then(rows => setSensorRows(rows))
-      .catch(() => setSensorRows([]));
+    loadEquipmentData();
+    const pollingId = window.setInterval(loadEquipmentData, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(pollingId);
+    };
   }, [activeEquipment?.equipmentId]);
 
   const componentLabel = activeMainComp === 'motor' ? '고압전동기' : '가스화기';
@@ -1719,8 +1762,11 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
 };
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [view, setView] = useState<'login' | 'dashboard' | 'detail' | 'motor_detail'>('login');
+  const initialAccessToken = (() => {
+    return getStoredAccessToken();
+  })();
+  const [isLoggedIn, setIsLoggedIn] = useState(Boolean(initialAccessToken));
+  const [view, setView] = useState<'login' | 'dashboard' | 'detail' | 'motor_detail'>(initialAccessToken ? 'dashboard' : 'login');
   const [activePlantId, setActivePlantId] = useState('taean');
   const [activeGeneratorId, setActiveGeneratorId] = useState(1);
   const [detailActiveMenu, setDetailActiveMenu] = useState<'generators' | 'logs'>('generators');
