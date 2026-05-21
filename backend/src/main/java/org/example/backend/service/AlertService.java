@@ -6,12 +6,17 @@ import org.example.backend.domain.anomaly.AnomalyConfig;
 import org.example.backend.domain.anomaly.MotorAnomalyResult;
 import org.example.backend.domain.anomaly.TubeAnomalyResult;
 import org.example.backend.domain.equipment.Equipment;
-import org.example.backend.global.enums.EquipmentType;
-import org.example.backend.repository.*;
-import org.springframework.stereotype.Service;
 import org.example.backend.dto.response.AlertResponse;
-import java.util.List;
+import org.example.backend.global.enums.EquipmentType;
+import org.example.backend.repository.AlertHistoryRepository;
+import org.example.backend.repository.AnomalyConfigRepository;
+import org.example.backend.repository.EquipmentRepository;
+import org.example.backend.repository.MotorAnomalyResultRepository;
+import org.example.backend.repository.TubeAnomalyResultRepository;
+import org.springframework.stereotype.Service;
+
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -24,11 +29,7 @@ public class AlertService {
     private final AlertHistoryRepository alertHistoryRepository;
     private final SlackWebhookService slackWebhookService;
 
-    public List<AlertResponse> getAlerts(
-            Long equipmentId,
-            String severity,
-            String type
-    ) {
+    public List<AlertResponse> getAlerts(Long equipmentId, String severity, String type) {
         String normalizedSeverity = severity == null ? null : severity.toUpperCase();
         String normalizedType = type == null ? null : type.toUpperCase();
 
@@ -36,38 +37,19 @@ public class AlertService {
 
         if (equipmentId != null && normalizedSeverity != null && normalizedType != null) {
             alerts = alertHistoryRepository
-                    .findByEquipmentIdAndSeverityAndAnomalyResultTypeOrderByOccurredAtDesc(
-                            equipmentId,
-                            normalizedSeverity,
-                            normalizedType
-                    );
+                    .findByEquipmentIdAndSeverityAndAnomalyResultTypeOrderByOccurredAtDesc(equipmentId, normalizedSeverity, normalizedType);
         } else if (equipmentId != null && normalizedSeverity != null) {
-            alerts = alertHistoryRepository
-                    .findByEquipmentIdAndSeverityOrderByOccurredAtDesc(
-                            equipmentId,
-                            normalizedSeverity
-                    );
+            alerts = alertHistoryRepository.findByEquipmentIdAndSeverityOrderByOccurredAtDesc(equipmentId, normalizedSeverity);
         } else if (equipmentId != null && normalizedType != null) {
-            alerts = alertHistoryRepository
-                    .findByEquipmentIdAndAnomalyResultTypeOrderByOccurredAtDesc(
-                            equipmentId,
-                            normalizedType
-                    );
+            alerts = alertHistoryRepository.findByEquipmentIdAndAnomalyResultTypeOrderByOccurredAtDesc(equipmentId, normalizedType);
         } else if (normalizedSeverity != null && normalizedType != null) {
-            alerts = alertHistoryRepository
-                    .findBySeverityAndAnomalyResultTypeOrderByOccurredAtDesc(
-                            normalizedSeverity,
-                            normalizedType
-                    );
+            alerts = alertHistoryRepository.findBySeverityAndAnomalyResultTypeOrderByOccurredAtDesc(normalizedSeverity, normalizedType);
         } else if (equipmentId != null) {
-            alerts = alertHistoryRepository
-                    .findByEquipmentIdOrderByOccurredAtDesc(equipmentId);
+            alerts = alertHistoryRepository.findByEquipmentIdOrderByOccurredAtDesc(equipmentId);
         } else if (normalizedSeverity != null) {
-            alerts = alertHistoryRepository
-                    .findBySeverityOrderByOccurredAtDesc(normalizedSeverity);
+            alerts = alertHistoryRepository.findBySeverityOrderByOccurredAtDesc(normalizedSeverity);
         } else if (normalizedType != null) {
-            alerts = alertHistoryRepository
-                    .findByAnomalyResultTypeOrderByOccurredAtDesc(normalizedType);
+            alerts = alertHistoryRepository.findByAnomalyResultTypeOrderByOccurredAtDesc(normalizedType);
         } else {
             alerts = alertHistoryRepository.findAllByOrderByOccurredAtDesc();
         }
@@ -76,9 +58,10 @@ public class AlertService {
                 .map(AlertResponse::from)
                 .toList();
     }
+
     public void sendMotorAlert(Long anomalyResultId) {
         MotorAnomalyResult result = motorAnomalyResultRepository.findById(anomalyResultId)
-                .orElseThrow(() -> new IllegalArgumentException("모터 이상 탐지 결과가 존재하지 않습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("전동기 이상 감지 결과가 존재하지 않습니다."));
 
         Equipment equipment = equipmentRepository.findById(result.getEquipmentId())
                 .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
@@ -98,7 +81,7 @@ public class AlertService {
 
     public void sendTubeAlert(Long anomalyResultId) {
         TubeAnomalyResult result = tubeAnomalyResultRepository.findById(anomalyResultId)
-                .orElseThrow(() -> new IllegalArgumentException("튜브 이상 탐지 결과가 존재하지 않습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("튜브 이상 감지 결과가 존재하지 않습니다."));
 
         Equipment equipment = equipmentRepository.findById(result.getEquipmentId())
                 .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
@@ -138,18 +121,8 @@ public class AlertService {
             return;
         }
 
-        String message = createMessage(
-                equipment.getEquipmentName(),
-                currentSeverity,
-                anomalyScore,
-                occurredAt
-        );
-
-        if (!"NORMAL".equals(currentSeverity)) {
-            slackWebhookService.sendMessage(message);
-        } else {
-            slackWebhookService.sendMessage(message);
-        }
+        String message = createMessage(equipment.getEquipmentName(), currentSeverity, anomalyScore, occurredAt);
+        slackWebhookService.sendMessage(message);
 
         AlertHistory alertHistory = AlertHistory.builder()
                 .equipmentId(equipment.getEquipmentId())
@@ -185,13 +158,13 @@ public class AlertService {
             LocalDateTime occurredAt
     ) {
         if ("NORMAL".equals(severity)) {
-            return "✅ [NORMAL] 설비 상태가 정상으로 복구되었습니다.\n"
+            return "[NORMAL] 설비 상태가 정상으로 복구되었습니다.\n"
                     + "설비: " + equipmentName + "\n"
                     + "시간: " + occurredAt + "\n"
                     + "점수: " + anomalyScore;
         }
 
-        return "⚠️ [" + severity + "] 설비 이상이 감지되었습니다.\n"
+        return "[" + severity + "] 설비 이상이 감지되었습니다.\n"
                 + "설비: " + equipmentName + "\n"
                 + "시간: " + occurredAt + "\n"
                 + "점수: " + anomalyScore;
