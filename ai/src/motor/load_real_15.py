@@ -1,53 +1,151 @@
-import psycopg2
+import re
+
 import pandas as pd
+import psycopg2
+from psycopg2.extras import execute_values
 
-DB_CONFIG = { "host": "localhost", "database": "kowepo_db", "user": "postgres", "password": "01234", "port": 5432 }
-# 예래님이 방금 넣으신 파일 경로
-CSV_PATH = "../../data/motor/simulation_stream_15.csv"
+from runtime_config import DB_CONFIG, MOTOR_CONFIG_ID, MOTOR_DATA_PATH, MOTOR_EQUIPMENT_ID, MOTOR_LOAD_LIMIT
 
-try:
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    
-    # 1. 진짜 15% 데이터 파일 읽기 (상위 35개 행 추출)
-    df = pd.read_csv(CSV_PATH)
-    
-    # ⚠️ 혹시 CSV 컬럼명이 대문자라면 소문자로 통일
-    df.columns = [c.lower() for c in df.columns]
-    df_sample = df.tail(35)
-    
-    # 2. 기존 테이블 깔끔하게 비우기
-    cursor.execute("TRUNCATE TABLE motor_sensor_data CASCADE;")
-    
-    # 파이프라인이 요구하는 35개 센서 태그 명단
-    cols = [
-        'ii1211a', 'tt1228a', 'tt1227a', 'yi1593aa', 'yi1593ab', 'yi1594aa', 'yi1594ab',
-        'ii1211b', 'tt1228b', 'tt1227b', 'yi1593ba', 'yi1593bb', 'yi1594ba', 'yi1594bb',
-        'ii1442', 'tt1427', 'tt1428', 'yi1483a', 'yi1483b', 'yi1484a', 'yi1484b',
-        'ii7140', 'tt7111', 'tt7100', 'yi7364a', 'yi7364b', 'yi7365a', 'yi7365b',
-        'ii7145', 'tt7152', 'tt7151', 'yi7358a', 'yi7358b', 'yi7359a', 'yi7359b'
-    ]
-    
-    print("🚀 15% 진짜 가동 데이터를 DB에 적재하는 중...")
-    
-    # 3. 데이터 주입 (시간은 현재 시간 기준으로 시뮬레이션 매핑)
-    base_time = pd.Timestamp.now() - pd.Timedelta(minutes=180)
-    
-    # 변경된 코드 (수정 후)
-    for idx, row in df_sample.iterrows():
-        measured_at = base_time + pd.Timedelta(minutes=5 * idx)
-    
-    # 💡 전류(ii)로 시작하는 센서면 강제로 160.0 대입 (가동 상태 시뮬레이션!)
-    # 온도와 진동은 예래님의 진짜 15% CSV 데이터를 그대로 사용합니다.
-        vals = [160.0 if c.startswith('ii') else (float(row[c]) if c in df_sample.columns else 0.0) for c in cols]
-        
-        query = f"INSERT INTO motor_sensor_data (equipment_id, measured_at, {', '.join(cols)}) VALUES (%s, %s, {', '.join(['%s']*len(cols))})"
-        cursor.execute(query, [1, measured_at] + vals)
-        
-    conn.commit()
-    cursor.close()
-    conn.close()
-    print("🟢 [성공] 진짜 15% 데이터 35행이 DB에 성공적으로 장착되었습니다!")
 
-except Exception as e:
-    print(f"❌ 데이터 적재 실패: {e}\n(팁: CSV 파일 내부의 컬럼명과 위 cols 명단이 일치하는지 확인해보세요!)")
+MOTOR_SENSOR_TAGS = [
+    "ii1211a", "tt1228a", "yi1593aa", "tt1227a", "yi1593ab", "yi1594aa", "yi1594ab",
+    "ii1211b", "tt1228b", "yi1593ba", "tt1227b", "yi1593bb", "yi1594ba", "yi1594bb",
+    "ii1442", "tt1427", "yi1483a", "tt1428", "yi1483b", "yi1484a", "yi1484b",
+    "ii7140", "tt7111", "yi7364a", "tt7100", "yi7364b", "yi7365a", "yi7365b",
+    "ii7145", "tt7152", "yi7358a", "tt7151", "yi7358b", "yi7359a", "yi7359b",
+]
+
+
+def compact_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def resolve_id(cursor, explicit_id, query: str, label: str) -> int:
+    if explicit_id:
+        return int(explicit_id)
+    cursor.execute(query)
+    row = cursor.fetchone()
+    if not row:
+        raise RuntimeError(f"{label} not found. Check init.sql seed data first.")
+    return int(row[0])
+
+
+def rename_motor_columns(df: pd.DataFrame) -> pd.DataFrame:
+    compact_to_original = {compact_name(column): column for column in df.columns}
+    rename_map = {}
+
+    for tag in MOTOR_SENSOR_TAGS:
+        tag_key = compact_name(tag)
+        source = next((original for compact, original in compact_to_original.items() if tag_key in compact), None)
+        if source:
+            rename_map[source] = tag
+
+    measured_at_source = next(
+        (column for column in df.columns if compact_name(column) in {"measuredat", "time", "timestamp", "datetime"}),
+        None,
+    )
+    if measured_at_source:
+        rename_map[measured_at_source] = "measured_at"
+
+    return df.rename(columns=rename_map)
+
+
+def prepare_dataframe() -> pd.DataFrame:
+    if not MOTOR_DATA_PATH.exists():
+        raise FileNotFoundError(f"Motor data file not found: {MOTOR_DATA_PATH}")
+
+    print(f"Reading motor CSV: {MOTOR_DATA_PATH}")
+    df = pd.read_csv(MOTOR_DATA_PATH)
+    df = rename_motor_columns(df)
+
+    missing = [tag for tag in MOTOR_SENSOR_TAGS if tag not in df.columns]
+    if missing:
+        raise RuntimeError(f"Missing motor sensor columns after mapping: {', '.join(missing)}")
+
+    if "measured_at" in df.columns:
+        df["measured_at"] = pd.to_datetime(df["measured_at"], errors="coerce")
+    else:
+        df["measured_at"] = pd.date_range(end=pd.Timestamp.now().floor("min"), periods=len(df), freq="5min")
+
+    df = df.dropna(subset=["measured_at"]).sort_values("measured_at")
+    df[MOTOR_SENSOR_TAGS] = df[MOTOR_SENSOR_TAGS].apply(pd.to_numeric, errors="coerce")
+    df = df.dropna(subset=MOTOR_SENSOR_TAGS)
+
+    if MOTOR_LOAD_LIMIT > 0:
+        df = df.tail(MOTOR_LOAD_LIMIT)
+
+    if df.empty:
+        raise RuntimeError("No valid motor rows to load.")
+
+    return df[["measured_at", *MOTOR_SENSOR_TAGS]].reset_index(drop=True)
+
+
+def save_thresholds(cursor, equipment_id: int, config_id: int, df: pd.DataFrame) -> None:
+    window_start_at = df["measured_at"].min()
+    window_end_at = df["measured_at"].max()
+    rows = []
+
+    for tag in MOTOR_SENSOR_TAGS:
+        series = df[tag]
+        lower = float(series.min())
+        upper = float(series.max())
+        if lower == upper:
+            lower -= 0.001
+            upper += 0.001
+        rows.append((equipment_id, config_id, tag, window_start_at, window_end_at, lower, upper))
+
+    cursor.execute("DELETE FROM motor_sensor_threshold WHERE equipment_id = %s AND config_id = %s", (equipment_id, config_id))
+    execute_values(
+        cursor,
+        """
+        INSERT INTO motor_sensor_threshold (
+            equipment_id, config_id, sensor_tag, window_start_at, window_end_at,
+            lower_threshold, upper_threshold
+        ) VALUES %s
+        """,
+        rows,
+    )
+
+
+def load_and_insert() -> None:
+    df = prepare_dataframe()
+
+    with psycopg2.connect(**DB_CONFIG) as conn:
+        with conn.cursor() as cursor:
+            equipment_id = resolve_id(
+                cursor,
+                MOTOR_EQUIPMENT_ID,
+                "SELECT equipment_id FROM equipment WHERE equipment_type = 'MOTOR' ORDER BY unit_no, equipment_id LIMIT 1",
+                "MOTOR equipment",
+            )
+            config_id = resolve_id(
+                cursor,
+                MOTOR_CONFIG_ID,
+                "SELECT config_id FROM anomaly_config WHERE equipment_type = 'MOTOR' AND is_active = TRUE ORDER BY config_id DESC LIMIT 1",
+                "active MOTOR anomaly_config",
+            )
+
+            print(f"Clearing motor_sensor_data for equipment_id={equipment_id}")
+            cursor.execute("DELETE FROM motor_sensor_data WHERE equipment_id = %s", (equipment_id,))
+
+            rows = [
+                (equipment_id, row.measured_at.to_pydatetime(), *[float(getattr(row, tag)) for tag in MOTOR_SENSOR_TAGS])
+                for row in df.itertuples(index=False)
+            ]
+            execute_values(
+                cursor,
+                f"""
+                INSERT INTO motor_sensor_data (
+                    equipment_id, measured_at, {", ".join(MOTOR_SENSOR_TAGS)}
+                ) VALUES %s
+                """,
+                rows,
+            )
+            save_thresholds(cursor, equipment_id, config_id, df)
+
+    print(f"[SUCCESS] Loaded {len(df)} motor rows and {len(MOTOR_SENSOR_TAGS)} thresholds.")
+
+
+if __name__ == "__main__":
+    load_and_insert()
+
