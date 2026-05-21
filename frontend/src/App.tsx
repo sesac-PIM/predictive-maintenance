@@ -79,6 +79,7 @@ type ApiSensorRow = {
 type ApiThreshold = {
   sensorTag?: string;
   tag?: string;
+  displayName?: string;
   lowerThreshold?: number;
   upperThreshold?: number;
   minValue?: number;
@@ -1320,6 +1321,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
   const [anomalyRows, setAnomalyRows] = useState<ApiAnomaly[]>([]);
   const [contributions, setContributions] = useState<ApiContribution[]>([]);
   const [sensorRows, setSensorRows] = useState<any[]>([]);
+  const [sensorThresholds, setSensorThresholds] = useState<ApiThreshold[]>([]);
 
   useEffect(() => {
     apiRequest<ApiPlant[]>('/api/plants')
@@ -1383,15 +1385,17 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
       setAnomalyRows([]);
       setContributions([]);
       setSensorRows([]);
+      setSensorThresholds([]);
       return;
     }
 
     let cancelled = false;
     const loadEquipmentData = async () => {
       try {
-        const [anomalies, sensors] = await Promise.all([
+        const [anomalies, sensors, thresholds] = await Promise.all([
           apiRequest<ApiAnomaly[]>(`/api/equipments/${activeEquipment.equipmentId}/anomalies`),
           apiRequest<ApiSensorRow[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-data`),
+          apiRequest<ApiThreshold[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-thresholds`),
         ]);
         if (cancelled) return;
 
@@ -1400,6 +1404,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
         setAnomalyRows(sorted);
         setLatestAnomaly(latest);
         setSensorRows(sensors);
+        setSensorThresholds(thresholds);
 
         if (latest) {
           try {
@@ -1417,6 +1422,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
         setAnomalyRows([]);
         setContributions([]);
         setSensorRows([]);
+        setSensorThresholds([]);
       }
     };
 
@@ -1432,6 +1438,13 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
   const graphLabel = activeMainComp === 'motor' ? '통합 이상 수치 추이' : '가스화기 튜브 이상 수치 추이';
   const eventDescPrefix = activeMainComp === 'motor' ? sensorGroupsLabels[activeGroupKey] : '가스화기 튜브';
   const latestSensor = latestSensorRow(sensorRows);
+  const sensorDisplayNameMap = useMemo(() => {
+    const entries = sensorThresholds
+      .map(item => [item.sensorTag || item.tag, item.displayName] as const)
+      .filter((entry): entry is readonly [string, string] => Boolean(entry[0] && entry[1]));
+    return new Map(entries);
+  }, [sensorThresholds]);
+  const getSensorDisplayName = (tag: string) => sensorDisplayNameMap.get(tag) || tag;
   const trendData = chartDataFromAnomalies(anomalyRows);
   const currentSeverity = normalizeSeverity(latestAnomaly?.anomalyScore, latestAnomaly?.severity);
   const showContribution = currentSeverity !== 'NORMAL';
@@ -1657,7 +1670,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                   {activeSensors.map((tag, i) => (
                     <div key={tag} className="p-4 bg-black/40 rounded-xl border border-white/[0.03] flex flex-col gap-3 hover:border-[#38bdf8]/30 transition-all hover:bg-black/60 group sensor-card">
                       <div className="flex justify-between items-end">
-                        <span className="font-mono text-[11px] text-[#38bdf8]/70 group-hover:text-[#38bdf8] transition-colors">{tag}</span>
+                        <span className="font-mono text-[11px] text-[#38bdf8]/70 group-hover:text-[#38bdf8] transition-colors">{getSensorDisplayName(tag)}</span>
                         <div className="flex items-baseline gap-1">
                           <span className="text-white font-data-lg text-lg tracking-tighter">{sensorValueFromRow(latestSensor, tag) == null ? '-' : sensorValueFromRow(latestSensor, tag)!.toFixed(2)}</span>
                           <span className="text-[9px] text-gray-600 font-bold uppercase whitespace-nowrap">현재값</span>
@@ -1739,7 +1752,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                   {activeSensors.map((tag, i) => (
                     <div key={tag} className="p-4 bg-black/40 rounded-xl border border-white/[0.03] flex flex-col gap-3 hover:border-[#38bdf8]/30 transition-all hover:bg-black/60 group sensor-card">
                       <div className="flex justify-between items-end">
-                        <span className="font-mono text-[11px] text-[#38bdf8]/70 group-hover:text-[#38bdf8] transition-colors">{tag}</span>
+                        <span className="font-mono text-[11px] text-[#38bdf8]/70 group-hover:text-[#38bdf8] transition-colors">{getSensorDisplayName(tag)}</span>
                         <div className="flex items-baseline gap-1">
                           <span className="text-white font-data-lg text-lg tracking-tighter">{sensorValueFromRow(latestSensor, tag) == null ? '-' : sensorValueFromRow(latestSensor, tag)!.toFixed(2)}</span>
                           <span className="text-[9px] text-gray-600 font-bold uppercase whitespace-nowrap">현재값</span>

@@ -31,6 +31,8 @@ SCALER_PATH = Path(
 
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip("/")
 ALERT_API_TOKEN = os.getenv("TUBE_ALERT_API_TOKEN", "")
+ALERT_USERNAME = os.getenv("TUBE_ALERT_USERNAME", os.getenv("AI_ALERT_USERNAME", "codex_admin"))
+ALERT_PASSWORD = os.getenv("TUBE_ALERT_PASSWORD", os.getenv("AI_ALERT_PASSWORD", "1234"))
 
 
 def resolve_tube_equipment_id(cur):
