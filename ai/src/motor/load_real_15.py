@@ -4,7 +4,7 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
-from runtime_config import DB_CONFIG, MOTOR_DATA_PATH, MOTOR_EQUIPMENT_ID, MOTOR_LOAD_LIMIT, resolve_motor_config_id
+from runtime_config import DB_CONFIG, MOTOR_DATA_PATH, MOTOR_LOAD_LIMIT, resolve_motor_config_id, resolve_motor_equipment_ids
 
 
 MOTOR_SENSOR_TAGS = [
@@ -112,33 +112,33 @@ def load_and_insert() -> None:
 
     with psycopg2.connect(**DB_CONFIG) as conn:
         with conn.cursor() as cursor:
-            equipment_id = resolve_id(
-                cursor,
-                MOTOR_EQUIPMENT_ID,
-                "SELECT equipment_id FROM equipment WHERE equipment_type = 'MOTOR' ORDER BY unit_no, equipment_id LIMIT 1",
-                "MOTOR equipment",
-            )
+            equipment_ids = resolve_motor_equipment_ids(cursor)
             config_id = resolve_motor_config_id(cursor)
 
-            print(f"Clearing motor_sensor_data for equipment_id={equipment_id}")
-            cursor.execute("DELETE FROM motor_sensor_data WHERE equipment_id = %s", (equipment_id,))
+            print(f"Clearing motor_sensor_data for {len(equipment_ids)} MOTOR equipments")
+            cursor.execute("DELETE FROM motor_sensor_data WHERE equipment_id = ANY(%s)", (equipment_ids,))
 
-            rows = [
-                (equipment_id, row.measured_at.to_pydatetime(), *[float(getattr(row, tag)) for tag in MOTOR_SENSOR_TAGS])
-                for row in df.itertuples(index=False)
-            ]
-            execute_values(
-                cursor,
-                f"""
-                INSERT INTO motor_sensor_data (
-                    equipment_id, measured_at, {", ".join(MOTOR_SENSOR_TAGS)}
-                ) VALUES %s
-                """,
-                rows,
-            )
-            save_thresholds(cursor, equipment_id, config_id, df)
+            total_rows = 0
+            for equipment_id in equipment_ids:
+                rows = [
+                    (equipment_id, row.measured_at.to_pydatetime(), *[float(getattr(row, tag)) for tag in MOTOR_SENSOR_TAGS])
+                    for row in df.itertuples(index=False)
+                ]
+                execute_values(
+                    cursor,
+                    f"""
+                    INSERT INTO motor_sensor_data (
+                        equipment_id, measured_at, {", ".join(MOTOR_SENSOR_TAGS)}
+                    ) VALUES %s
+                    """,
+                    rows,
+                )
+                save_thresholds(cursor, equipment_id, config_id, df)
+                total_rows += len(rows)
+                conn.commit()
+                print(f"[OK] Loaded {len(rows)} motor rows for equipment_id={equipment_id}")
 
-    print(f"[SUCCESS] Loaded {len(df)} motor rows and {len(MOTOR_SENSOR_TAGS)} thresholds.")
+    print(f"[SUCCESS] Loaded {total_rows} motor rows and {len(MOTOR_SENSOR_TAGS)} thresholds per equipment.")
 
 
 if __name__ == "__main__":

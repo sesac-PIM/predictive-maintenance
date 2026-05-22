@@ -68,6 +68,24 @@ def resolve_tube_equipment_id(cur):
     return row[0]
 
 
+def resolve_tube_equipment_ids(cur):
+    if TUBE_EQUIPMENT_NAME or os.getenv("TUBE_UNIT_NO"):
+        return [resolve_tube_equipment_id(cur)]
+
+    cur.execute(
+        """
+        SELECT equipment_id
+        FROM equipment
+        WHERE equipment_type = 'TUBE'
+        ORDER BY plant_id, unit_no, equipment_id
+        """
+    )
+    rows = cur.fetchall()
+    if not rows:
+        raise RuntimeError("TUBE equipment not found. Check equipment seed data.")
+    return [row[0] for row in rows]
+
+
 def resolve_tube_config_id(cur):
     cur.execute(
         """
