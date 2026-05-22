@@ -473,5 +473,4 @@ INSERT INTO anomaly_config (
     is_active
 )
 VALUES
-('MOTOR', 'motor-v1', 0.7, 0.9, TRUE),
 ('TUBE', 'tube-v1', 0.3, 0.4, TRUE);

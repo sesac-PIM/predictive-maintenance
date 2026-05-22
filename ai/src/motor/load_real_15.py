@@ -4,7 +4,7 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
-from runtime_config import DB_CONFIG, MOTOR_CONFIG_ID, MOTOR_DATA_PATH, MOTOR_EQUIPMENT_ID, MOTOR_LOAD_LIMIT
+from runtime_config import DB_CONFIG, MOTOR_DATA_PATH, MOTOR_EQUIPMENT_ID, MOTOR_LOAD_LIMIT, resolve_motor_config_id
 
 
 MOTOR_SENSOR_TAGS = [
@@ -118,12 +118,7 @@ def load_and_insert() -> None:
                 "SELECT equipment_id FROM equipment WHERE equipment_type = 'MOTOR' ORDER BY unit_no, equipment_id LIMIT 1",
                 "MOTOR equipment",
             )
-            config_id = resolve_id(
-                cursor,
-                MOTOR_CONFIG_ID,
-                "SELECT config_id FROM anomaly_config WHERE equipment_type = 'MOTOR' AND is_active = TRUE ORDER BY config_id DESC LIMIT 1",
-                "active MOTOR anomaly_config",
-            )
+            config_id = resolve_motor_config_id(cursor)
 
             print(f"Clearing motor_sensor_data for equipment_id={equipment_id}")
             cursor.execute("DELETE FROM motor_sensor_data WHERE equipment_id = %s", (equipment_id,))
