@@ -36,6 +36,7 @@ CREATE TABLE plant (
     location VARCHAR(100),
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
+    generation_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -439,10 +440,15 @@ INSERT INTO plant (
     plant_name,
     location,
     latitude,
-    longitude
+    longitude,
+    generation_count
 )
 VALUES
-('IGCC 발전소', '충남 태안', 36.745, 126.297);
+('태안발전본부', '충남 태안', 36.745, 126.297, 11),
+('평택발전본부', '경기 평택', 36.974, 126.846, 7),
+('서인천발전본부', '인천 서구', 37.526, 126.602, 8),
+('군산발전본부', '전북 군산', 35.981, 126.708, 1),
+('김포발전본부', '경기 김포', 37.615, 126.724, 2);
 
 -- equipment
 INSERT INTO equipment (
