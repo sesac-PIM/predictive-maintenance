@@ -2,7 +2,7 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
-from runtime_config import DB_CONFIG, DATA_PATH, resolve_tube_equipment_id
+from runtime_config import DB_CONFIG, DATA_PATH, resolve_tube_equipment_ids
 
 
 REQUIRED_COLUMNS = [
@@ -89,28 +89,10 @@ def load_and_insert():
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()
-        equipment_id = resolve_tube_equipment_id(cur)
+        equipment_ids = resolve_tube_equipment_ids(cur)
 
-        print("Clearing existing tube_sensor_data...")
-        cur.execute("DELETE FROM tube_sensor_data WHERE equipment_id = %s", (equipment_id,))
-
-        data_to_insert = []
-        for _, row in df.iterrows():
-            data_to_insert.append(
-                (
-                    equipment_id,
-                    row["time"],
-                    row["SGC OUT TEMP"],
-                    row["HPHT FSH FLTR DP-A"],
-                    row["GF VSS PRESS TAP/ANSP DP"],
-                    row["MP Steam Flow"],
-                    row["MP STM DRUM IN FW FLW"],
-                    row["MP Balance"],
-                    row["Heat Duty"],
-                    row["IG Load %"],
-                    row["Demi Water Trans Pump Discharge Flow"],
-                )
-            )
+        print(f"Clearing existing tube_sensor_data for {len(equipment_ids)} TUBE equipments...")
+        cur.execute("DELETE FROM tube_sensor_data WHERE equipment_id = ANY(%s)", (equipment_ids,))
 
         query = """
             INSERT INTO tube_sensor_data (
@@ -120,9 +102,31 @@ def load_and_insert():
                 tag_13jyi9001, tag_10ind0001, bopc1_1_16200_fi_po041
             ) VALUES %s
         """
-        execute_values(cur, query, data_to_insert)
+
+        total_rows = 0
+        for equipment_id in equipment_ids:
+            data_to_insert = []
+            for _, row in df.iterrows():
+                data_to_insert.append(
+                    (
+                        equipment_id,
+                        row["time"],
+                        row["SGC OUT TEMP"],
+                        row["HPHT FSH FLTR DP-A"],
+                        row["GF VSS PRESS TAP/ANSP DP"],
+                        row["MP Steam Flow"],
+                        row["MP STM DRUM IN FW FLW"],
+                        row["MP Balance"],
+                        row["Heat Duty"],
+                        row["IG Load %"],
+                        row["Demi Water Trans Pump Discharge Flow"],
+                    )
+                )
+            execute_values(cur, query, data_to_insert)
+            total_rows += len(data_to_insert)
+
         conn.commit()
-        print(f"[SUCCESS] {len(df)} rows -> tube_sensor_data (equipment_id={equipment_id})")
+        print(f"[SUCCESS] {total_rows} rows -> tube_sensor_data ({len(equipment_ids)} equipments)")
 
     except Exception as e:
         if conn:

@@ -15,10 +15,10 @@ from runtime_config import (
     MOTOR_ALERT_API_TOKEN,
     MOTOR_ALERT_PASSWORD,
     MOTOR_ALERT_USERNAME,
-    MOTOR_EQUIPMENT_ID,
     MOTOR_MODEL_DIR,
     MOTOR_WINDOW_SIZE,
     resolve_motor_config_id,
+    resolve_motor_equipment_ids,
 )
 
 
@@ -320,14 +320,7 @@ def execute_pipeline() -> None:
             cursor.execute("SELECT warning_threshold, danger_threshold FROM anomaly_config WHERE config_id = %s", (config_id,))
             warning_threshold, danger_threshold = cursor.fetchone()
 
-            if MOTOR_EQUIPMENT_ID:
-                equipment_ids = [int(MOTOR_EQUIPMENT_ID)]
-            else:
-                cursor.execute("SELECT equipment_id FROM equipment WHERE equipment_type = 'MOTOR' ORDER BY unit_no, equipment_id")
-                equipment_ids = [int(row[0]) for row in cursor.fetchall()]
-
-            if not equipment_ids:
-                raise RuntimeError("No MOTOR equipment found.")
+            equipment_ids = resolve_motor_equipment_ids(cursor)
 
             for equipment_id in equipment_ids:
                 process_equipment(conn, cursor, equipment_id, config_id, float(warning_threshold), float(danger_threshold))

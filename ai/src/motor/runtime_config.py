@@ -70,3 +70,21 @@ def resolve_motor_config_id(cursor) -> int:
         (MOTOR_MODEL_VERSION, MOTOR_WARNING_THRESHOLD, MOTOR_DANGER_THRESHOLD),
     )
     return int(cursor.fetchone()[0])
+
+
+def resolve_motor_equipment_ids(cursor) -> list[int]:
+    if MOTOR_EQUIPMENT_ID:
+        return [int(MOTOR_EQUIPMENT_ID)]
+
+    cursor.execute(
+        """
+        SELECT equipment_id
+        FROM equipment
+        WHERE equipment_type = 'MOTOR'
+        ORDER BY plant_id, unit_no, equipment_id
+        """
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        raise RuntimeError("No MOTOR equipment found.")
+    return [int(row[0]) for row in rows]
