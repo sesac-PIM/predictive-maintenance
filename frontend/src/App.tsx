@@ -21,6 +21,7 @@ type ApiPlant = {
   location?: string;
   latitude?: number;
   longitude?: number;
+  generationCount?: number;
 };
 
 type ApiEquipment = {
@@ -93,8 +94,9 @@ type UiPlant = {
   name: string;
   location: string;
   capacity: string;
-  units: string;
-  unitNote?: string;
+  latitude?: number;
+  longitude?: number;
+  generationCount: number;
   top: number;
   left: number;
 };
@@ -198,7 +200,7 @@ function getEquipmentName(equipment: ApiEquipment) {
 
 function getStaticPlantMeta(name: string, index: number) {
   const matched = STATIC_PLANTS.find(p => p.name === name || name.includes(p.name.replace('발전본부', '')));
-  return matched || { ...STATIC_PLANTS[index % STATIC_PLANTS.length], name, id: String(index + 1), plantId: index + 1 };
+  return matched || { ...STATIC_PLANTS[index % STATIC_PLANTS.length], name, id: String(index + 1) };
 }
 
 function sortAnomaliesDesc(items: ApiAnomaly[]) {
@@ -267,9 +269,8 @@ const KakaoPlantMap = ({ plants, selectedPlantId, onPlantClick }: { plants: UiPl
     });
 
     plants.forEach(plant => {
-      if (plant.top == null || plant.left == null) return;
-      const lat = 38.4 - (plant.top / 100) * 5.6;
-      const lng = 124.4 + (plant.left / 100) * 6.2;
+      const lat = plant.latitude ?? (38.4 - (plant.top / 100) * 5.6);
+      const lng = plant.longitude ?? (124.4 + (plant.left / 100) * 6.2);
       const position = new window.kakao.maps.LatLng(lat, lng);
       const marker = new window.kakao.maps.Marker({ position, map });
       const info = new window.kakao.maps.InfoWindow({
@@ -522,11 +523,11 @@ const LoginPage = ({ onLogin }: { onLogin: (username: string, password: string) 
 };
 
 const STATIC_PLANTS = [
-  { id: 'taean', name: "태안발전본부", location: "충청남도 태안군 원북면 발전로 457", capacity: "6,504.5", units: "11", top: 38, left: 40 },
-  { id: 'seoincheon', name: "서인천발전본부", location: "인천광역시 서구 장도로 57", capacity: "1,861.8", units: "8", top: 20, left: 45 },
-  { id: 'pyeongtaek', name: "평택발전본부", location: "경기도 평택시 포승읍 남양만로 175-2", capacity: "871.4", units: "7", top: 32, left: 50 },
-  { id: 'gunsan', name: "군산발전본부", location: "전라북도 군산시 구암 3.1로 91-5", capacity: "719.4", units: "1", top: 58, left: 45 },
-  { id: 'gimpo', name: "김포발전본부", location: "경기도 김포시 양촌읍 학운리", capacity: "495", units: "2", unitNote: "(GT 1, ST 1)", top: 23, left: 48 }
+  { id: 'taean', name: "태안발전본부", location: "충청남도 태안군 원북면 발전로 457", capacity: "6,504.5", top: 38, left: 40 },
+  { id: 'seoincheon', name: "서인천발전본부", location: "인천광역시 서구 장도로 57", capacity: "1,861.8", top: 20, left: 45 },
+  { id: 'pyeongtaek', name: "평택발전본부", location: "경기도 평택시 포승읍 남양만로 175-2", capacity: "871.4", top: 32, left: 50 },
+  { id: 'gunsan', name: "군산발전본부", location: "전라북도 군산시 구암 3.1로 91-5", capacity: "719.4", top: 58, left: 45 },
+  { id: 'gimpo', name: "김포발전본부", location: "경기도 김포시 양촌읍 학운리", capacity: "495", top: 23, left: 48 }
 ];
 
 const DashboardPage = ({ onNavigateToDetail }: { onNavigateToDetail: (plantId: string) => void }) => {
@@ -538,24 +539,21 @@ const DashboardPage = ({ onNavigateToDetail }: { onNavigateToDetail: (plantId: s
   useEffect(() => {
     let alive = true;
     apiRequest<ApiPlant[]>('/api/plants')
-      .then(async apiPlants => {
-        const enriched = await Promise.all(apiPlants.map(async (plant, index) => {
+      .then(apiPlants => {
+        const enriched = apiPlants.map((plant, index) => {
           const meta = getStaticPlantMeta(plant.plantName, index);
-          let units = meta.units;
-          try {
-            const equipments = await apiRequest<ApiEquipment[]>(`/api/equipments?plantId=${plant.plantId}`);
-            const unitNos = new Set(equipments.map(e => e.unitNo).filter((n): n is number => typeof n === 'number'));
-            if (unitNos.size > 0) units = String(Math.max(...Array.from(unitNos)));
-          } catch {}
           return {
             ...meta,
             id: String(plant.plantId),
             plantId: plant.plantId,
             name: plant.plantName,
-            location: plant.location || meta.location,
-            units,
+            location: meta.location,
+            capacity: meta.capacity,
+            latitude: plant.latitude,
+            longitude: plant.longitude,
+            generationCount: plant.generationCount ?? 0,
           };
-        }));
+        });
         if (alive && enriched.length > 0) {
           setPlants(enriched);
           setSelectedPlantId(enriched[0].id);
@@ -633,15 +631,16 @@ const DashboardPage = ({ onNavigateToDetail }: { onNavigateToDetail: (plantId: s
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className={`text-[10px] font-bold uppercase ${selectedPlantId === plant.id ? 'text-primary' : 'text-outline/70'}`}>설비용량</p>
-                    <p className="font-data-lg text-data-lg text-on-surface">{plant.capacity}<span className="text-xs ml-1">MW</span></p>
+                    <p className="font-data-lg text-data-lg text-on-surface">
+                      {plant.capacity}
+                      <span className="text-xs ml-1">MW</span>
+                    </p>
                   </div>
                   <div>
                     <p className={`text-[10px] font-bold uppercase ${selectedPlantId === plant.id ? 'text-primary' : 'text-outline/70'}`}>발전대수</p>
                     <p className="font-data-lg text-data-lg text-on-surface">
-                      {plant.units}
-                      <span className={plant.unitNote ? "text-[10px] ml-1" : "text-xs ml-1"}>
-                        {plant.unitNote ? `대 ${plant.unitNote}` : "대"}
-                      </span>
+                      {plant.generationCount}
+                      <span className="text-xs ml-1">대</span>
                     </p>
                   </div>
                 </div>
@@ -779,14 +778,18 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
           id: String(plant.plantId),
           plantId: plant.plantId,
           name: plant.plantName,
-          location: plant.location || getStaticPlantMeta(plant.plantName, index).location,
+          location: getStaticPlantMeta(plant.plantName, index).location,
+          capacity: getStaticPlantMeta(plant.plantName, index).capacity,
+          latitude: plant.latitude,
+          longitude: plant.longitude,
+          generationCount: plant.generationCount ?? 0,
         }));
         if (mapped.length > 0) setPlants(mapped);
       })
       .catch(() => setPlants([]));
   }, []);
 
-  const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '발전본부 데이터 없음', location: '', capacity: '', units: '0', top: 50, left: 50 };
+  const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '발전본부 데이터 없음', location: '', capacity: '', generationCount: 0, top: 50, left: 50 };
   const numericPlantId = plant?.plantId || Number(plantId);
 
   useEffect(() => {
@@ -1331,14 +1334,18 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
           id: String(plant.plantId),
           plantId: plant.plantId,
           name: plant.plantName,
-          location: plant.location || getStaticPlantMeta(plant.plantName, index).location,
+          location: getStaticPlantMeta(plant.plantName, index).location,
+          capacity: getStaticPlantMeta(plant.plantName, index).capacity,
+          latitude: plant.latitude,
+          longitude: plant.longitude,
+          generationCount: plant.generationCount ?? 0,
         }));
         if (mapped.length > 0) setPlants(mapped);
       })
       .catch(() => setPlants([]));
   }, []);
 
-  const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '발전본부 데이터 없음', location: '', capacity: '', units: '0', top: 50, left: 50 };
+  const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '발전본부 데이터 없음', location: '', capacity: '', generationCount: 0, top: 50, left: 50 };
   const numericPlantId = plant?.plantId || Number(plantId);
   const unitCount = Math.max(0, ...equipments.map(e => e.unitNo || 0));
 

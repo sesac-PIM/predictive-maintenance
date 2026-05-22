@@ -25,6 +25,9 @@ MOTOR_MODEL_DIR = Path(env("MOTOR_MODEL_DIR", str(AI_DIR / "models" / "motor")))
 
 MOTOR_EQUIPMENT_ID = os.getenv("MOTOR_EQUIPMENT_ID")
 MOTOR_CONFIG_ID = os.getenv("MOTOR_CONFIG_ID")
+MOTOR_MODEL_VERSION = env("MOTOR_MODEL_VERSION", "motor-runtime")
+MOTOR_WARNING_THRESHOLD = float(env("MOTOR_WARNING_THRESHOLD", "0.7"))
+MOTOR_DANGER_THRESHOLD = float(env("MOTOR_DANGER_THRESHOLD", "0.9"))
 
 MOTOR_WINDOW_SIZE = int(env("MOTOR_WINDOW_SIZE", "30"))
 MOTOR_LOAD_LIMIT = int(env("MOTOR_LOAD_LIMIT", "0"))
@@ -32,3 +35,38 @@ MOTOR_ALERT_API_BASE_URL = env("MOTOR_ALERT_API_BASE_URL", "http://localhost:808
 MOTOR_ALERT_API_TOKEN = os.getenv("MOTOR_ALERT_API_TOKEN")
 MOTOR_ALERT_USERNAME = os.getenv("MOTOR_ALERT_USERNAME", os.getenv("AI_ALERT_USERNAME", "codex_admin"))
 MOTOR_ALERT_PASSWORD = os.getenv("MOTOR_ALERT_PASSWORD", os.getenv("AI_ALERT_PASSWORD", "1234"))
+
+
+def resolve_motor_config_id(cursor) -> int:
+    if MOTOR_CONFIG_ID:
+        return int(MOTOR_CONFIG_ID)
+
+    cursor.execute(
+        """
+        SELECT config_id
+        FROM anomaly_config
+        WHERE equipment_type = 'MOTOR'
+          AND is_active = TRUE
+        ORDER BY config_id DESC
+        LIMIT 1
+        """
+    )
+    row = cursor.fetchone()
+    if row:
+        return int(row[0])
+
+    cursor.execute(
+        """
+        INSERT INTO anomaly_config (
+            equipment_type, model_version, warning_threshold, danger_threshold, is_active
+        ) VALUES ('MOTOR', %s, %s, %s, TRUE)
+        ON CONFLICT (equipment_type, model_version)
+        DO UPDATE SET
+            warning_threshold = EXCLUDED.warning_threshold,
+            danger_threshold = EXCLUDED.danger_threshold,
+            is_active = TRUE
+        RETURNING config_id
+        """,
+        (MOTOR_MODEL_VERSION, MOTOR_WARNING_THRESHOLD, MOTOR_DANGER_THRESHOLD),
+    )
+    return int(cursor.fetchone()[0])

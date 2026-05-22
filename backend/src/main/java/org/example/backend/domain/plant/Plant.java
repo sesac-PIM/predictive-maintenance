@@ -27,6 +27,9 @@ public class Plant {
 
     private Double longitude;
 
+    @Column(name = "generation_count", nullable = false)
+    private Integer generationCount;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 }

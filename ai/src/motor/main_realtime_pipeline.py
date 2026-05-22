@@ -15,10 +15,10 @@ from runtime_config import (
     MOTOR_ALERT_API_TOKEN,
     MOTOR_ALERT_PASSWORD,
     MOTOR_ALERT_USERNAME,
-    MOTOR_CONFIG_ID,
     MOTOR_EQUIPMENT_ID,
     MOTOR_MODEL_DIR,
     MOTOR_WINDOW_SIZE,
+    resolve_motor_config_id,
 )
 
 
@@ -316,12 +316,7 @@ def execute_pipeline() -> None:
 
     with psycopg2.connect(**DB_CONFIG) as conn:
         with conn.cursor() as cursor:
-            config_id = resolve_id(
-                cursor,
-                MOTOR_CONFIG_ID,
-                "SELECT config_id FROM anomaly_config WHERE equipment_type = 'MOTOR' AND is_active = TRUE ORDER BY config_id DESC LIMIT 1",
-                "active MOTOR anomaly_config",
-            )
+            config_id = resolve_motor_config_id(cursor)
             cursor.execute("SELECT warning_threshold, danger_threshold FROM anomaly_config WHERE config_id = %s", (config_id,))
             warning_threshold, danger_threshold = cursor.fetchone()
 

@@ -13,6 +13,7 @@ public class PlantResponse {
     private String location;
     private Double latitude;
     private Double longitude;
+    private Integer generationCount;
 
     public static PlantResponse from(Plant plant) {
         return PlantResponse.builder()
@@ -21,6 +22,7 @@ public class PlantResponse {
                 .location(plant.getLocation())
                 .latitude(plant.getLatitude())
                 .longitude(plant.getLongitude())
+                .generationCount(plant.getGenerationCount())
                 .build();
     }
 }
