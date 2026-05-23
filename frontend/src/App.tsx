@@ -109,7 +109,7 @@ declare global {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY || ''; // 카카오맵 JavaScript 키(.env) 자리
-const TUBE_DIAGRAM_SRC = '/tube-diagram.svg';
+const TUBE_DIAGRAM_SRC = '/tube-diagram.png';
 
 function clearStoredToken() {
   localStorage.removeItem('accessToken');
