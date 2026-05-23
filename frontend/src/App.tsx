@@ -194,6 +194,16 @@ function readableAlertMessage(alert: ApiAlert, part?: string) {
   return `${part ? `${part} ` : ''}${label} 알림이 발생했습니다.`;
 }
 
+function alertTargetKey(alert: Pick<ApiAlert, 'equipmentId' | 'anomalyResultId' | 'anomalyResultType'>) {
+  return `${alert.anomalyResultType || 'UNKNOWN'}:${alert.equipmentId || 'unknown'}:${alert.anomalyResultId || 'unknown'}`;
+}
+
+function scoreFromAlertMessage(message?: string) {
+  if (!message) return undefined;
+  const numbers = [...message.matchAll(/\b\d+(?:\.\d+)?\b/g)].map(match => Number(match[0]));
+  return numbers.reverse().find(value => value >= 0 && value <= 1);
+}
+
 function getEquipmentName(equipment: ApiEquipment) {
   return equipment.equipmentName || equipment.equipmentname || '';
 }
@@ -767,7 +777,8 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   const [plants, setPlants] = useState<UiPlant[]>([]);
   const [equipments, setEquipments] = useState<ApiEquipment[]>([]);
   const [latestAnomalies, setLatestAnomalies] = useState<Record<number, ApiAnomaly | undefined>>({});
-  const [contributionsByAnomaly, setContributionsByAnomaly] = useState<Record<number, ApiContribution[]>>({});
+  const [contributionsByAnomaly, setContributionsByAnomaly] = useState<Record<string, ApiContribution[]>>({});
+  const [alertAnomaliesByTarget, setAlertAnomaliesByTarget] = useState<Record<string, ApiAnomaly | undefined>>({});
   const [alertLogs, setAlertLogs] = useState<ApiAlert[]>([]);
 
   useEffect(() => {
@@ -817,27 +828,43 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   useEffect(() => {
     if (alertLogs.length === 0) {
       setContributionsByAnomaly({});
+      setAlertAnomaliesByTarget({});
       return;
     }
 
     const uniqueTargets = alertLogs
       .filter((alert): alert is ApiAlert & { equipmentId: number; anomalyResultId: number } => Boolean(alert.equipmentId && alert.anomalyResultId))
-      .filter((alert, index, list) => list.findIndex(item => item.anomalyResultId === alert.anomalyResultId) === index);
+      .filter((alert, index, list) => list.findIndex(item => alertTargetKey(item) === alertTargetKey(alert)) === index);
 
     if (uniqueTargets.length === 0) {
       setContributionsByAnomaly({});
+      setAlertAnomaliesByTarget({});
       return;
     }
 
     Promise.all(uniqueTargets.map(async alert => {
+      const key = alertTargetKey(alert);
+      let contributions: ApiContribution[] = [];
+      let anomaly: ApiAnomaly | undefined;
+
       try {
-        const list = await apiRequest<ApiContribution[]>(`/api/equipments/${alert.equipmentId}/anomalies/${alert.anomalyResultId}/contributions`);
-        return [alert.anomalyResultId, list] as const;
+        contributions = await apiRequest<ApiContribution[]>(`/api/equipments/${alert.equipmentId}/anomalies/${alert.anomalyResultId}/contributions`);
       } catch (error) {
         console.error(error);
-        return [alert.anomalyResultId, []] as const;
       }
-    })).then(entries => setContributionsByAnomaly(Object.fromEntries(entries)));
+
+      try {
+        const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${alert.equipmentId}/anomalies`);
+        anomaly = anomalies.find(item => item.anomalyResultId === alert.anomalyResultId);
+      } catch (error) {
+        console.error(error);
+      }
+
+      return [key, contributions, anomaly] as const;
+    })).then(entries => {
+      setContributionsByAnomaly(Object.fromEntries(entries.map(([key, contributions]) => [key, contributions])));
+      setAlertAnomaliesByTarget(Object.fromEntries(entries.map(([key, , anomaly]) => [key, anomaly])));
+    });
   }, [alertLogs]);
 
   const unitCount = useMemo(() => {
@@ -874,7 +901,8 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       const equipment = equipmentById.get(alert.equipmentId || -1);
       const unitNo = equipment?.unitNo || 1;
       const type = (alert.anomalyResultType || equipment?.equipmentType || '').toUpperCase() === 'MOTOR' ? 'motor' : 'gasifier';
-      const score = latestAnomalies[alert.equipmentId || -1]?.anomalyScore;
+      const targetKey = alertTargetKey(alert);
+      const score = alertAnomaliesByTarget[targetKey]?.anomalyScore ?? scoreFromAlertMessage(alert.message) ?? latestAnomalies[alert.equipmentId || -1]?.anomalyScore;
       const part = type === 'motor' ? '고압전동기' : '가스화기';
       return {
         id: alert.alertId || index + 1,
@@ -885,11 +913,11 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         type,
         part,
         message: readableAlertMessage(alert, part),
-        contributions: alert.anomalyResultId ? (contributionsByAnomaly[alert.anomalyResultId] || []) : [],
+        contributions: alert.anomalyResultId ? (contributionsByAnomaly[targetKey] || []) : [],
         alerts: [{ ...alert, message: readableAlertMessage(alert, part) }],
       };
     });
-  }, [alertLogs, equipments, plant.name, contributionsByAnomaly, latestAnomalies]);
+  }, [alertLogs, equipments, plant.name, contributionsByAnomaly, alertAnomaliesByTarget, latestAnomalies]);
 
   return (
     <div className="bg-background text-[#dee3e8] font-sans overflow-hidden h-screen flex flex-col relative">
