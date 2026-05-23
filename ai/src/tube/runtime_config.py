@@ -14,7 +14,10 @@ DB_CONFIG = {
 
 TUBE_UNIT_NO = int(os.getenv("TUBE_UNIT_NO", "1"))
 TUBE_EQUIPMENT_NAME = os.getenv("TUBE_EQUIPMENT_NAME")
-WINDOW_SIZE = int(os.getenv("TUBE_WINDOW_SIZE", "24"))
+WINDOW_SIZE = max(1, int(os.getenv("TUBE_WINDOW_SIZE", "24")))
+STEP_SIZE = max(1, int(os.getenv("TUBE_STEP_SIZE", "1")))
+RUN_MODE = os.getenv("TUBE_RUN_MODE", "batch").lower()
+MAX_WINDOWS_PER_RUN = max(0, int(os.getenv("TUBE_MAX_WINDOWS_PER_RUN", "0")))
 
 DATA_PATH = Path(
     os.getenv(

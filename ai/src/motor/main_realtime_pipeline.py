@@ -15,7 +15,10 @@ from runtime_config import (
     MOTOR_ALERT_API_TOKEN,
     MOTOR_ALERT_PASSWORD,
     MOTOR_ALERT_USERNAME,
+    MOTOR_MAX_WINDOWS_PER_RUN,
     MOTOR_MODEL_DIR,
+    MOTOR_RUN_MODE,
+    MOTOR_STEP_SIZE,
     MOTOR_WINDOW_SIZE,
     resolve_motor_config_id,
     resolve_motor_equipment_ids,
@@ -148,14 +151,18 @@ def evaluate_domain_rules(window_df: pd.DataFrame, cfg: dict) -> tuple[list[str]
     return list(dict.fromkeys(detected_events)), logs
 
 
-def load_component_model(component_name: str):
+def load_component_model(component_name: str, model_cache: dict):
+    if component_name in model_cache:
+        return model_cache[component_name]
+
     suffix = component_name.lower()
     scaler = joblib.load(MOTOR_MODEL_DIR / f"scaler_{suffix}.pkl")
     autoencoder = tf.keras.models.load_model(MOTOR_MODEL_DIR / f"autoencoder_{suffix}.keras")
+    model_cache[component_name] = (scaler, autoencoder)
     return scaler, autoencoder
 
 
-def fetch_window(conn, equipment_id: int) -> pd.DataFrame:
+def fetch_latest_window(conn, equipment_id: int) -> pd.DataFrame:
     columns = ", ".join(MOTOR_SENSOR_TAGS)
     query = f"""
         SELECT measured_at, {columns}
@@ -166,6 +173,41 @@ def fetch_window(conn, equipment_id: int) -> pd.DataFrame:
     """
     df = pd.read_sql_query(query, conn, params=(equipment_id, MOTOR_WINDOW_SIZE))
     return df.sort_values("measured_at").reset_index(drop=True)
+
+
+def fetch_all_sensor_data(conn, equipment_id: int) -> pd.DataFrame:
+    columns = ", ".join(MOTOR_SENSOR_TAGS)
+    query = f"""
+        SELECT measured_at, {columns}
+        FROM motor_sensor_data
+        WHERE equipment_id = %s
+        ORDER BY measured_at ASC
+    """
+    return pd.read_sql_query(query, conn, params=(equipment_id,))
+
+
+def get_last_window_end_at(cursor, equipment_id: int, config_id: int):
+    cursor.execute(
+        """
+        SELECT MAX(window_end_at)
+        FROM motor_anomaly_result
+        WHERE equipment_id = %s
+          AND config_id = %s
+        """,
+        (equipment_id, config_id),
+    )
+    return cursor.fetchone()[0]
+
+
+def iter_window_frames(df: pd.DataFrame, last_window_end_at=None):
+    total_windows = max(0, len(df) - MOTOR_WINDOW_SIZE + 1)
+    for start in range(0, total_windows, MOTOR_STEP_SIZE):
+        end = start + MOTOR_WINDOW_SIZE
+        window_df = df.iloc[start:end].reset_index(drop=True)
+        window_end_at = window_df["measured_at"].iloc[-1]
+        if last_window_end_at is not None and window_end_at <= last_window_end_at:
+            continue
+        yield window_df
 
 
 def send_alert(anomaly_result_id: int) -> None:
@@ -206,11 +248,10 @@ def get_alert_headers():
         return None
 
 
-def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_threshold: float, danger_threshold: float) -> None:
-    df = fetch_window(conn, equipment_id)
+def process_window(cursor, df: pd.DataFrame, equipment_id: int, config_id: int, warning_threshold: float, danger_threshold: float, model_cache: dict) -> bool:
     if len(df) < MOTOR_WINDOW_SIZE:
         print(f"[SKIP] equipment_id={equipment_id}: need {MOTOR_WINDOW_SIZE} rows, found {len(df)}")
-        return
+        return False
 
     window_start_at = df["measured_at"].iloc[0]
     window_end_at = df["measured_at"].iloc[-1]
@@ -229,7 +270,7 @@ def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_t
         features.update({f"{col}_std": df[col].std() for col in cfg["target_cols"]})
         x_df = pd.DataFrame([features])
 
-        scaler, autoencoder = load_component_model(component_name)
+        scaler, autoencoder = load_component_model(component_name, model_cache)
         x_df = x_df[scaler.feature_names_in_]
         x_scaled = scaler.transform(x_df)
         pred = autoencoder.predict(x_scaled, verbose=0)
@@ -309,10 +350,48 @@ def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_t
     print(f"[OK] equipment_id={equipment_id} score={final_score:.4f} severity={severity} event={final_event}")
     if severity in {"WARNING", "DANGER"}:
         send_alert(result_id)
+    return True
+
+
+def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_threshold: float, danger_threshold: float, model_cache: dict) -> None:
+    if MOTOR_RUN_MODE == "latest":
+        df = fetch_latest_window(conn, equipment_id)
+        if process_window(cursor, df, equipment_id, config_id, warning_threshold, danger_threshold, model_cache):
+            conn.commit()
+        return
+
+    df = fetch_all_sensor_data(conn, equipment_id)
+    if len(df) < MOTOR_WINDOW_SIZE:
+        print(f"[SKIP] equipment_id={equipment_id}: need {MOTOR_WINDOW_SIZE} rows, found {len(df)}")
+        return
+
+    last_window_end_at = get_last_window_end_at(cursor, equipment_id, config_id) if MOTOR_RUN_MODE == "replay" else None
+    max_windows = MOTOR_MAX_WINDOWS_PER_RUN
+    if MOTOR_RUN_MODE == "replay" and max_windows <= 0:
+        max_windows = 1
+
+    processed = 0
+    for window_df in iter_window_frames(df, last_window_end_at):
+        if process_window(cursor, window_df, equipment_id, config_id, warning_threshold, danger_threshold, model_cache):
+            processed += 1
+        if processed % 50 == 0:
+            conn.commit()
+        if max_windows > 0 and processed >= max_windows:
+            break
+
+    conn.commit()
+    if processed == 0:
+        print(f"[NOOP] equipment_id={equipment_id}: no new MOTOR windows")
+    else:
+        print(f"[DONE] equipment_id={equipment_id}: saved {processed} MOTOR windows")
 
 
 def execute_pipeline() -> None:
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting motor inference pipeline")
+    print(
+        f"MOTOR run mode={MOTOR_RUN_MODE}, window={MOTOR_WINDOW_SIZE}, "
+        f"step={MOTOR_STEP_SIZE}, max_windows_per_run={MOTOR_MAX_WINDOWS_PER_RUN}"
+    )
 
     with psycopg2.connect(**DB_CONFIG) as conn:
         with conn.cursor() as cursor:
@@ -321,9 +400,18 @@ def execute_pipeline() -> None:
             warning_threshold, danger_threshold = cursor.fetchone()
 
             equipment_ids = resolve_motor_equipment_ids(cursor)
+            model_cache = {}
 
             for equipment_id in equipment_ids:
-                process_equipment(conn, cursor, equipment_id, config_id, float(warning_threshold), float(danger_threshold))
+                process_equipment(
+                    conn,
+                    cursor,
+                    equipment_id,
+                    config_id,
+                    float(warning_threshold),
+                    float(danger_threshold),
+                    model_cache,
+                )
 
     print("[DONE] Motor inference pipeline complete")
 
