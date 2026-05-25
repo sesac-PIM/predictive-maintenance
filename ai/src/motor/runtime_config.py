@@ -34,10 +34,6 @@ MOTOR_STEP_SIZE = max(1, int(env("MOTOR_STEP_SIZE", "5")))
 MOTOR_RUN_MODE = env("MOTOR_RUN_MODE", "latest").lower()
 MOTOR_MAX_WINDOWS_PER_RUN = max(0, int(env("MOTOR_MAX_WINDOWS_PER_RUN", "0")))
 MOTOR_LOAD_LIMIT = int(env("MOTOR_LOAD_LIMIT", "0"))
-MOTOR_ALERT_API_BASE_URL = env("MOTOR_ALERT_API_BASE_URL", "http://localhost:8080")
-MOTOR_ALERT_API_TOKEN = os.getenv("MOTOR_ALERT_API_TOKEN")
-MOTOR_ALERT_USERNAME = os.getenv("MOTOR_ALERT_USERNAME", os.getenv("AI_ALERT_USERNAME", "codex_admin"))
-MOTOR_ALERT_PASSWORD = os.getenv("MOTOR_ALERT_PASSWORD", os.getenv("AI_ALERT_PASSWORD", "1234"))
 
 
 def resolve_motor_config_id(cursor) -> int:

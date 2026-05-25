@@ -33,4 +33,11 @@ public class MotorAnomalyResult {
     private LocalDateTime windowStartAt;
 
     private LocalDateTime windowEndAt;
+
+    @Column(name = "alert_processed", nullable = false)
+    private Boolean alertProcessed;
+
+    public void markAlertProcessed() {
+        this.alertProcessed = true;
+    }
 }

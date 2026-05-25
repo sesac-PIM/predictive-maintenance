@@ -5,16 +5,11 @@ import joblib
 import numpy as np
 import pandas as pd
 import psycopg2
-import requests
 import tensorflow as tf
 
 from load_real_15 import MOTOR_SENSOR_TAGS
 from runtime_config import (
     DB_CONFIG,
-    MOTOR_ALERT_API_BASE_URL,
-    MOTOR_ALERT_API_TOKEN,
-    MOTOR_ALERT_PASSWORD,
-    MOTOR_ALERT_USERNAME,
     MOTOR_MAX_WINDOWS_PER_RUN,
     MOTOR_MODEL_DIR,
     MOTOR_RUN_MODE,
@@ -199,6 +194,50 @@ def get_last_window_end_at(cursor, equipment_id: int, config_id: int):
     return cursor.fetchone()[0]
 
 
+def get_config_model_version(cursor, config_id: int) -> str:
+    cursor.execute(
+        "SELECT model_version FROM anomaly_config WHERE config_id = %s",
+        (config_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        raise RuntimeError(f"anomaly_config not found: config_id={config_id}")
+    return str(row[0])
+
+
+def get_last_checkpoint_at(cursor, equipment_id: int, model_version: str):
+    cursor.execute(
+        """
+        SELECT last_processed_at
+        FROM inference_checkpoint
+        WHERE equipment_id = %s
+          AND equipment_type = 'MOTOR'
+          AND model_version = %s
+        """,
+        (equipment_id, model_version),
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def update_checkpoint(cursor, equipment_id: int, model_version: str, window_end_at) -> None:
+    cursor.execute(
+        """
+        INSERT INTO inference_checkpoint (
+            equipment_id, equipment_type, model_version, last_processed_at, updated_at
+        ) VALUES (%s, 'MOTOR', %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (equipment_id, equipment_type, model_version)
+        DO UPDATE SET
+            last_processed_at = GREATEST(
+                COALESCE(inference_checkpoint.last_processed_at, EXCLUDED.last_processed_at),
+                EXCLUDED.last_processed_at
+            ),
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (equipment_id, model_version, window_end_at),
+    )
+
+
 def iter_window_frames(df: pd.DataFrame, last_window_end_at=None):
     total_windows = max(0, len(df) - MOTOR_WINDOW_SIZE + 1)
     for start in range(0, total_windows, MOTOR_STEP_SIZE):
@@ -208,44 +247,6 @@ def iter_window_frames(df: pd.DataFrame, last_window_end_at=None):
         if last_window_end_at is not None and window_end_at <= last_window_end_at:
             continue
         yield window_df
-
-
-def send_alert(anomaly_result_id: int) -> None:
-    headers = get_alert_headers()
-    if not headers:
-        print("[WARN] Backend alert auth is unavailable. Skipping backend alert API call.")
-        return
-
-    try:
-        response = requests.post(
-            f"{MOTOR_ALERT_API_BASE_URL.rstrip('/')}/api/alerts/motor/{anomaly_result_id}/send",
-            headers=headers,
-            timeout=5,
-        )
-        response.raise_for_status()
-        print(f"Alert API sent for motor anomaly_result_id={anomaly_result_id}")
-    except Exception as exc:
-        print(f"[WARN] Alert API call skipped/failed: {exc}")
-
-
-def get_alert_headers():
-    if MOTOR_ALERT_API_TOKEN:
-        return {"Authorization": f"Bearer {MOTOR_ALERT_API_TOKEN}"}
-
-    try:
-        response = requests.post(
-            f"{MOTOR_ALERT_API_BASE_URL.rstrip('/')}/api/auth/login",
-            json={"username": MOTOR_ALERT_USERNAME, "password": MOTOR_ALERT_PASSWORD},
-            timeout=5,
-        )
-        response.raise_for_status()
-        access_token = response.json().get("accessToken")
-        if not access_token:
-            raise RuntimeError("Login response did not include accessToken.")
-        return {"Authorization": f"Bearer {access_token}"}
-    except Exception as exc:
-        print(f"[WARN] Could not get backend alert token: {exc}")
-        return None
 
 
 def process_window(cursor, df: pd.DataFrame, equipment_id: int, config_id: int, warning_threshold: float, danger_threshold: float, model_cache: dict) -> bool:
@@ -323,7 +324,8 @@ def process_window(cursor, df: pd.DataFrame, equipment_id: int, config_id: int, 
             anomaly_score = EXCLUDED.anomaly_score,
             event_type = EXCLUDED.event_type,
             duration_sec = EXCLUDED.duration_sec,
-            description = EXCLUDED.description
+            description = EXCLUDED.description,
+            alert_processed = FALSE
         RETURNING motor_anomaly_result_id
         """,
         (equipment_id, config_id, window_start_at, window_end_at, window_end_at, final_score, final_event, duration_sec, final_description),
@@ -348,15 +350,16 @@ def process_window(cursor, df: pd.DataFrame, equipment_id: int, config_id: int, 
 
     severity = calculate_severity(final_score, warning_threshold, danger_threshold)
     print(f"[OK] equipment_id={equipment_id} score={final_score:.4f} severity={severity} event={final_event}")
-    if severity in {"WARNING", "DANGER"}:
-        send_alert(result_id)
     return True
 
 
 def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_threshold: float, danger_threshold: float, model_cache: dict) -> None:
+    model_version = get_config_model_version(cursor, config_id)
+
     if MOTOR_RUN_MODE == "latest":
         df = fetch_latest_window(conn, equipment_id)
         if process_window(cursor, df, equipment_id, config_id, warning_threshold, danger_threshold, model_cache):
+            update_checkpoint(cursor, equipment_id, model_version, df["measured_at"].iloc[-1])
             conn.commit()
         return
 
@@ -365,7 +368,11 @@ def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_t
         print(f"[SKIP] equipment_id={equipment_id}: need {MOTOR_WINDOW_SIZE} rows, found {len(df)}")
         return
 
-    last_window_end_at = get_last_window_end_at(cursor, equipment_id, config_id) if MOTOR_RUN_MODE == "replay" else None
+    last_window_end_at = None
+    if MOTOR_RUN_MODE == "replay":
+        last_window_end_at = get_last_checkpoint_at(cursor, equipment_id, model_version)
+        if last_window_end_at is None:
+            last_window_end_at = get_last_window_end_at(cursor, equipment_id, config_id)
     max_windows = MOTOR_MAX_WINDOWS_PER_RUN
     if MOTOR_RUN_MODE == "replay" and max_windows <= 0:
         max_windows = 1
@@ -373,6 +380,7 @@ def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_t
     processed = 0
     for window_df in iter_window_frames(df, last_window_end_at):
         if process_window(cursor, window_df, equipment_id, config_id, warning_threshold, danger_threshold, model_cache):
+            update_checkpoint(cursor, equipment_id, model_version, window_df["measured_at"].iloc[-1])
             processed += 1
         if processed % 50 == 0:
             conn.commit()

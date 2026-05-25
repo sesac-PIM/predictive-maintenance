@@ -45,4 +45,9 @@ public class Equipment {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    public void updateStatus(EquipmentStatus status, LocalDateTime statusUpdatedAt) {
+        this.status = status;
+        this.statusUpdatedAt = statusUpdatedAt;
+    }
 }

@@ -4,12 +4,14 @@ DROP TABLE IF EXISTS tube_anomaly_sensor_contribution CASCADE;
 DROP TABLE IF EXISTS alert_history CASCADE;
 DROP TABLE IF EXISTS motor_anomaly_result CASCADE;
 DROP TABLE IF EXISTS tube_anomaly_result CASCADE;
+DROP TABLE IF EXISTS inference_checkpoint CASCADE;
 DROP TABLE IF EXISTS motor_sensor_threshold CASCADE;
 DROP TABLE IF EXISTS tube_sensor_threshold CASCADE;
 DROP TABLE IF EXISTS anomaly_config CASCADE;
 DROP TABLE IF EXISTS motor_sensor_data CASCADE;
 DROP TABLE IF EXISTS tube_sensor_data CASCADE;
 DROP TABLE IF EXISTS equipment CASCADE;
+DROP TABLE IF EXISTS refresh_token CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS plant CASCADE;
 
@@ -63,6 +65,20 @@ CREATE TABLE equipment (
 
     CONSTRAINT chk_equipment_status
         CHECK (status IN ('NORMAL', 'WARNING', 'DANGER', 'INACTIVE'))
+);
+
+CREATE TABLE refresh_token (
+    refresh_token_id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    token VARCHAR(255) NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL,
+    revoked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_refresh_token_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
 );
 
 --------------------------------------------------
@@ -249,6 +265,7 @@ CREATE TABLE motor_anomaly_result (
     event_type VARCHAR(50),
     duration_sec INT,
     description TEXT,
+    alert_processed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_motor_anomaly_equipment
@@ -280,6 +297,7 @@ CREATE TABLE tube_anomaly_result (
     measured_at TIMESTAMP NOT NULL,
 
     anomaly_score DOUBLE PRECISION NOT NULL,
+    alert_processed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_tube_anomaly_equipment
@@ -295,6 +313,26 @@ CREATE TABLE tube_anomaly_result (
 
     CONSTRAINT uq_tube_anomaly_window
         UNIQUE (equipment_id, config_id, window_start_at, window_end_at)
+);
+
+CREATE TABLE inference_checkpoint (
+    checkpoint_id BIGSERIAL PRIMARY KEY,
+    equipment_id BIGINT NOT NULL,
+    equipment_type VARCHAR(20) NOT NULL,
+    model_version VARCHAR(50) NOT NULL,
+    last_processed_at TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_inference_checkpoint_equipment
+        FOREIGN KEY (equipment_id)
+        REFERENCES equipment(equipment_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT chk_checkpoint_equipment_type
+        CHECK (equipment_type IN ('MOTOR', 'TUBE')),
+
+    CONSTRAINT uq_inference_checkpoint
+        UNIQUE (equipment_id, equipment_type, model_version)
 );
 
 --------------------------------------------------
@@ -389,6 +427,12 @@ CREATE INDEX idx_equipment_plant_id
 CREATE INDEX idx_equipment_type
     ON equipment(equipment_type);
 
+CREATE INDEX idx_refresh_token_token
+    ON refresh_token(token);
+
+CREATE INDEX idx_refresh_token_user_id
+    ON refresh_token(user_id);
+
 CREATE INDEX idx_motor_sensor_equipment_measured
     ON motor_sensor_data(equipment_id, measured_at);
 
@@ -418,6 +462,15 @@ CREATE INDEX idx_motor_anomaly_config
 
 CREATE INDEX idx_tube_anomaly_config
     ON tube_anomaly_result(config_id);
+
+CREATE INDEX idx_motor_anomaly_alert_processed
+    ON motor_anomaly_result(alert_processed, motor_anomaly_result_id);
+
+CREATE INDEX idx_tube_anomaly_alert_processed
+    ON tube_anomaly_result(alert_processed, tube_anomaly_result_id);
+
+CREATE INDEX idx_inference_checkpoint_lookup
+    ON inference_checkpoint(equipment_id, equipment_type, model_version);
 
 CREATE INDEX idx_alert_equipment_occurred
     ON alert_history(equipment_id, occurred_at);

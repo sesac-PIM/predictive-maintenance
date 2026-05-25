@@ -13,20 +13,26 @@ public class SlackWebhookService {
     private static final Logger log = LoggerFactory.getLogger(SlackWebhookService.class);
     private final RestTemplate restTemplate = new RestTemplate();
 
-    public void sendMessage(String message) {
+    public boolean sendMessage(String message) {
         String webhookUrl = System.getenv("SLACK_WEBHOOK_URL");
 
         if (webhookUrl == null || webhookUrl.isBlank()) {
             log.warn("SLACK_WEBHOOK_URL is not set. Skip Slack webhook send.");
-            return;
+            return false;
         }
 
         Map<String, String> payload = Map.of("text", message);
 
-        restTemplate.postForEntity(
-                webhookUrl,
-                payload,
-                String.class
-        );
+        try {
+            restTemplate.postForEntity(
+                    webhookUrl,
+                    payload,
+                    String.class
+            );
+            return true;
+        } catch (Exception e) {
+            log.warn("Slack webhook send failed: {}", e.getMessage());
+            return false;
+        }
     }
 }

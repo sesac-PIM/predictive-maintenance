@@ -110,10 +110,12 @@ declare global {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY || ''; // 카카오맵 JavaScript 키(.env) 자리
 const TUBE_DIAGRAM_SRC = '/tube-diagram.png';
+const REALTIME_UPDATE_EVENT = 'pm:realtime-update';
 
 function clearStoredToken() {
   localStorage.removeItem('accessToken');
   localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
 }
 
 function isJwtExpired(token: string) {
@@ -126,20 +128,54 @@ function isJwtExpired(token: string) {
 }
 
 function getStoredAccessToken() {
-  const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-  if (!token) return null;
-  if (isJwtExpired(token)) {
+  return localStorage.getItem('accessToken') || localStorage.getItem('token');
+}
+
+function getStoredRefreshToken() {
+  return localStorage.getItem('refreshToken');
+}
+
+function emitRealtimeUpdate() {
+  window.dispatchEvent(new CustomEvent(REALTIME_UPDATE_EVENT));
+}
+
+async function refreshAccessToken() {
+  const refreshToken = getStoredRefreshToken();
+  if (!refreshToken) return null;
+
+  const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+
+  if (!response.ok) {
     clearStoredToken();
     return null;
   }
-  return token;
+
+  const data = await response.json();
+  const accessToken = data.accessToken || data.token;
+  if (!accessToken) {
+    clearStoredToken();
+    return null;
+  }
+
+  localStorage.setItem('accessToken', accessToken);
+  if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+  return accessToken;
 }
 
-async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getStoredAccessToken();
+async function apiRequest<T>(path: string, options: RequestInit = {}, retryOnUnauthorized = true): Promise<T> {
+  let token = getStoredAccessToken();
   const headers = new Headers(options.headers || {});
   headers.set('Content-Type', 'application/json');
   const isAuthRequest = path.startsWith('/api/auth/');
+
+  if (!isAuthRequest && (!token || isJwtExpired(token))) {
+    token = await refreshAccessToken();
+  }
+
   if (token && !isAuthRequest) headers.set('Authorization', `Bearer ${token}`);
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -149,6 +185,12 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
 
   if (!response.ok) {
     if ((response.status === 401 || response.status === 403) && !isAuthRequest) {
+      if (retryOnUnauthorized) {
+        const refreshedToken = await refreshAccessToken();
+        if (refreshedToken) {
+          return apiRequest<T>(path, options, false);
+        }
+      }
       clearStoredToken();
       window.location.reload();
     }
@@ -780,6 +822,17 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   const [contributionsByAnomaly, setContributionsByAnomaly] = useState<Record<string, ApiContribution[]>>({});
   const [alertAnomaliesByTarget, setAlertAnomaliesByTarget] = useState<Record<string, ApiAnomaly | undefined>>({});
   const [alertLogs, setAlertLogs] = useState<ApiAlert[]>([]);
+  const [realtimeTick, setRealtimeTick] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setRealtimeTick(value => value + 1);
+    window.addEventListener(REALTIME_UPDATE_EVENT, refresh);
+    const pollingId = window.setInterval(refresh, 10_000);
+    return () => {
+      window.removeEventListener(REALTIME_UPDATE_EVENT, refresh);
+      window.clearInterval(pollingId);
+    };
+  }, []);
 
   useEffect(() => {
     apiRequest<ApiPlant[]>('/api/plants')
@@ -811,7 +864,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
     apiRequest<ApiAlert[]>('/api/alerts')
       .then(setAlertLogs)
       .catch(() => setAlertLogs([]));
-  }, [numericPlantId]);
+  }, [numericPlantId, realtimeTick]);
 
   useEffect(() => {
     if (equipments.length === 0) return;
@@ -823,7 +876,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         return [equipment.equipmentId, undefined] as const;
       }
     })).then(entries => setLatestAnomalies(Object.fromEntries(entries)));
-  }, [equipments]);
+  }, [equipments, realtimeTick]);
 
   useEffect(() => {
     if (alertLogs.length === 0) {
@@ -1195,6 +1248,17 @@ const HeaderActions = () => {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   const [alerts, setAlerts] = useState<Array<{ id: number; type: string; title: string; desc: string; time: string }>>([]);
+  const [realtimeTick, setRealtimeTick] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setRealtimeTick(value => value + 1);
+    window.addEventListener(REALTIME_UPDATE_EVENT, refresh);
+    const pollingId = window.setInterval(refresh, 10_000);
+    return () => {
+      window.removeEventListener(REALTIME_UPDATE_EVENT, refresh);
+      window.clearInterval(pollingId);
+    };
+  }, []);
 
   useEffect(() => {
     apiRequest<ApiAlert[]>('/api/alerts')
@@ -1206,7 +1270,7 @@ const HeaderActions = () => {
         time: formatApiTime(alert.occurredAt).split(' ').slice(-1)[0] || '',
       }))))
       .catch(() => undefined);
-  }, []);
+  }, [realtimeTick]);
 
   const applyTheme = (nextTheme: 'dark' | 'light') => {
     setTheme(nextTheme);
@@ -1353,6 +1417,17 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
   const [contributions, setContributions] = useState<ApiContribution[]>([]);
   const [sensorRows, setSensorRows] = useState<any[]>([]);
   const [sensorThresholds, setSensorThresholds] = useState<ApiThreshold[]>([]);
+  const [realtimeTick, setRealtimeTick] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setRealtimeTick(value => value + 1);
+    window.addEventListener(REALTIME_UPDATE_EVENT, refresh);
+    const pollingId = window.setInterval(refresh, 10_000);
+    return () => {
+      window.removeEventListener(REALTIME_UPDATE_EVENT, refresh);
+      window.clearInterval(pollingId);
+    };
+  }, []);
 
   useEffect(() => {
     apiRequest<ApiPlant[]>('/api/plants')
@@ -1462,12 +1537,10 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
     };
 
     loadEquipmentData();
-    const pollingId = window.setInterval(loadEquipmentData, 60_000);
     return () => {
       cancelled = true;
-      window.clearInterval(pollingId);
     };
-  }, [activeEquipment?.equipmentId]);
+  }, [activeEquipment?.equipmentId, realtimeTick]);
 
   const componentLabel = activeMainComp === 'motor' ? '고압전동기' : '가스화기';
   const graphLabel = activeMainComp === 'motor' ? '통합 이상 수치 추이' : '가스화기 튜브 이상 수치 추이';
@@ -1821,11 +1894,21 @@ export default function App() {
 
   const [activeComp, setActiveComp] = useState<'motor' | 'gasifier'>('motor');
 
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const eventSource = new EventSource(`${API_BASE_URL}/api/events/stream`);
+    eventSource.onmessage = () => emitRealtimeUpdate();
+    eventSource.addEventListener('realtime-update', () => emitRealtimeUpdate());
+    eventSource.onerror = () => undefined;
+
+    return () => eventSource.close();
+  }, [isLoggedIn]);
+
   const handleLogin = async (username: string, password: string) => {
     try {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('token');
-      const response = await apiRequest<{ accessToken?: string; token?: string }>('/api/auth/login', {
+      clearStoredToken();
+      const response = await apiRequest<{ accessToken?: string; token?: string; refreshToken?: string }>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       });
@@ -1835,6 +1918,7 @@ export default function App() {
         return;
       }
       localStorage.setItem('accessToken', token);
+      if (response.refreshToken) localStorage.setItem('refreshToken', response.refreshToken);
       setIsLoggedIn(true);
       setView('dashboard');
     } catch (error) {

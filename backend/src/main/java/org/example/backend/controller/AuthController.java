@@ -2,6 +2,7 @@ package org.example.backend.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.dto.request.LoginRequest;
+import org.example.backend.dto.request.RefreshTokenRequest;
 import org.example.backend.dto.request.SignupRequest;
 import org.example.backend.dto.response.LoginResponse;
 import org.example.backend.service.AuthService;
@@ -23,5 +24,10 @@ public class AuthController {
     @PostMapping("/login")
     public LoginResponse login(@RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/refresh")
+    public LoginResponse refresh(@RequestBody RefreshTokenRequest request) {
+        return authService.refresh(request);
     }
 }
