@@ -97,7 +97,9 @@ public class SecurityConfig {
                         // 인증 없이 허용
                         .requestMatchers(
                                 "/api/auth/signup",
-                                "/api/auth/login"
+                                "/api/auth/login",
+                                "/api/auth/refresh",
+                                "/api/events/stream"
                         ).permitAll()
 
                         // ADMIN만 가능

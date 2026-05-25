@@ -3,13 +3,8 @@ import numpy as np
 import torch
 import joblib
 import psycopg2
-import requests
 from model_arch import TransformerAutoencoder
 from runtime_config import (
-    ALERT_API_TOKEN,
-    ALERT_PASSWORD,
-    ALERT_USERNAME,
-    BACKEND_BASE_URL,
     DB_CONFIG,
     MAX_WINDOWS_PER_RUN,
     MODEL_PATH,
@@ -22,24 +17,61 @@ from runtime_config import (
 )
 
 
-def get_alert_headers():
-    if ALERT_API_TOKEN:
-        return {"Authorization": f"Bearer {ALERT_API_TOKEN}"}
+def get_config_model_version(cur, config_id: int) -> str:
+    cur.execute(
+        "SELECT model_version FROM anomaly_config WHERE config_id = %s",
+        (config_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise RuntimeError(f"anomaly_config not found: config_id={config_id}")
+    return str(row[0])
 
-    try:
-        response = requests.post(
-            f"{BACKEND_BASE_URL}/api/auth/login",
-            json={"username": ALERT_USERNAME, "password": ALERT_PASSWORD},
-            timeout=5,
-        )
-        response.raise_for_status()
-        access_token = response.json().get("accessToken")
-        if not access_token:
-            raise RuntimeError("Login response did not include accessToken.")
-        return {"Authorization": f"Bearer {access_token}"}
-    except Exception as e:
-        print(f"[WARN] Could not get backend alert token. Alert API calls will be skipped: {e}")
-        return None
+
+def get_last_result_at(cur, equipment_id: int, config_id: int):
+    cur.execute(
+        """
+        SELECT MAX(window_end_at)
+        FROM tube_anomaly_result
+        WHERE equipment_id = %s
+          AND config_id = %s
+        """,
+        (equipment_id, config_id),
+    )
+    return cur.fetchone()[0]
+
+
+def get_last_checkpoint_at(cur, equipment_id: int, model_version: str):
+    cur.execute(
+        """
+        SELECT last_processed_at
+        FROM inference_checkpoint
+        WHERE equipment_id = %s
+          AND equipment_type = 'TUBE'
+          AND model_version = %s
+        """,
+        (equipment_id, model_version),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def update_checkpoint(cur, equipment_id: int, model_version: str, window_end_at) -> None:
+    cur.execute(
+        """
+        INSERT INTO inference_checkpoint (
+            equipment_id, equipment_type, model_version, last_processed_at, updated_at
+        ) VALUES (%s, 'TUBE', %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (equipment_id, equipment_type, model_version)
+        DO UPDATE SET
+            last_processed_at = GREATEST(
+                COALESCE(inference_checkpoint.last_processed_at, EXCLUDED.last_processed_at),
+                EXCLUDED.last_processed_at
+            ),
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (equipment_id, model_version, window_end_at),
+    )
 
 
 def run_inference():
@@ -70,6 +102,7 @@ def run_inference():
     cur = conn.cursor()
     equipment_ids = resolve_tube_equipment_ids(cur)
     config_id = resolve_tube_config_id(cur)
+    model_version = get_config_model_version(cur, config_id)
 
     cur.execute("SELECT warning_threshold FROM anomaly_config WHERE config_id = %s", (config_id,))
     config_row = cur.fetchone()
@@ -109,23 +142,17 @@ def run_inference():
         X_raw = df[input_cols].values
         X_scaled = scaler.transform(X_raw)
 
-        cur.execute(
-            """
-            SELECT MAX(window_end_at)
-            FROM tube_anomaly_result
-            WHERE equipment_id = %s
-              AND config_id = %s
-            """,
-            (equipment_id, config_id),
-        )
-        last_window_end_at = cur.fetchone()[0] if RUN_MODE == "replay" else None
+        last_window_end_at = None
+        if RUN_MODE == "replay":
+            last_window_end_at = get_last_checkpoint_at(cur, equipment_id, model_version)
+            if last_window_end_at is None:
+                last_window_end_at = get_last_result_at(cur, equipment_id, config_id)
         max_windows = MAX_WINDOWS_PER_RUN
         if RUN_MODE == "replay" and max_windows <= 0:
             max_windows = 1
 
         total_windows = max(0, len(X_scaled) - WINDOW_SIZE + 1)
         print(f"Starting inference with 11 features for {total_windows} candidate windows...")
-        latest_alert_result_id = None
         processed_windows = 0
 
         for i in range(0, total_windows, STEP_SIZE):
@@ -148,7 +175,8 @@ def run_inference():
                 ON CONFLICT (equipment_id, config_id, window_start_at, window_end_at)
                 DO UPDATE SET
                     measured_at = EXCLUDED.measured_at,
-                    anomaly_score = EXCLUDED.anomaly_score
+                    anomaly_score = EXCLUDED.anomaly_score,
+                    alert_processed = FALSE
                 RETURNING tube_anomaly_result_id
             """, (equipment_id, config_id, df.iloc[i]['measured_at'], measured_at, measured_at, float(score)))
 
@@ -176,9 +204,7 @@ def run_inference():
                         contribution_rank = EXCLUDED.contribution_rank
                 """, (res_id, input_cols[idx], float(X_raw[i + WINDOW_SIZE - 1][idx]), float(s_score), ranks[idx]))
 
-            if score >= warning_th:
-                latest_alert_result_id = res_id
-
+            update_checkpoint(cur, equipment_id, model_version, measured_at)
             processed_windows += 1
             if processed_windows % 500 == 0:
                 print(f"Processed {processed_windows} windows for equipment_id={equipment_id}...")
@@ -188,20 +214,6 @@ def run_inference():
 
         conn.commit()
         print(f"[OK] equipment_id={equipment_id}: saved {processed_windows} TUBE windows")
-        if latest_alert_result_id:
-            alert_headers = get_alert_headers()
-            if alert_headers:
-                try:
-                    url = f"{BACKEND_BASE_URL}/api/alerts/tube/{latest_alert_result_id}/send"
-                    response = requests.post(url, headers=alert_headers, timeout=5)
-                    if response.status_code >= 400:
-                        print(f"[WARN] Alert API failed ({response.status_code}): {response.text[:200]}")
-                    else:
-                        print(f"[SUCCESS] Alert API sent for latest TUBE anomaly_result_id={latest_alert_result_id}")
-                except Exception as e:
-                    print(f"[WARN] Alert API call failed: {e}")
-            else:
-                print("[WARN] Backend alert auth is unavailable. Skipping backend alert API call.")
     cur.close()
     conn.close()
     print("[SUCCESS] 11-feature inference completed and results saved to DB.")

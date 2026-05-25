@@ -9,4 +9,6 @@ public interface TubeAnomalyResultRepository
         extends JpaRepository<TubeAnomalyResult, Long> {
 
     List<TubeAnomalyResult> findByEquipmentIdOrderByMeasuredAtDesc(Long equipmentId);
+
+    List<TubeAnomalyResult> findTop100ByAlertProcessedFalseOrderByTubeAnomalyResultIdAsc();
 }

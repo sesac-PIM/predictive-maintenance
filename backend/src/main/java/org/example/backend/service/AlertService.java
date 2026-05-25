@@ -7,6 +7,7 @@ import org.example.backend.domain.anomaly.MotorAnomalyResult;
 import org.example.backend.domain.anomaly.TubeAnomalyResult;
 import org.example.backend.domain.equipment.Equipment;
 import org.example.backend.dto.response.AlertResponse;
+import org.example.backend.global.enums.EquipmentStatus;
 import org.example.backend.global.enums.EquipmentType;
 import org.example.backend.repository.AlertHistoryRepository;
 import org.example.backend.repository.AnomalyConfigRepository;
@@ -14,6 +15,7 @@ import org.example.backend.repository.EquipmentRepository;
 import org.example.backend.repository.MotorAnomalyResultRepository;
 import org.example.backend.repository.TubeAnomalyResultRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -59,17 +61,29 @@ public class AlertService {
                 .toList();
     }
 
+    @Transactional
     public void sendMotorAlert(Long anomalyResultId) {
         MotorAnomalyResult result = motorAnomalyResultRepository.findById(anomalyResultId)
-                .orElseThrow(() -> new IllegalArgumentException("전동기 이상 감지 결과가 존재하지 않습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("Motor anomaly result not found."));
+        processMotorResult(result);
+        result.markAlertProcessed();
+    }
 
+    @Transactional
+    public void sendTubeAlert(Long anomalyResultId) {
+        TubeAnomalyResult result = tubeAnomalyResultRepository.findById(anomalyResultId)
+                .orElseThrow(() -> new IllegalArgumentException("Tube anomaly result not found."));
+        processTubeResult(result);
+        result.markAlertProcessed();
+    }
+
+    public boolean processMotorResult(MotorAnomalyResult result) {
         Equipment equipment = equipmentRepository.findById(result.getEquipmentId())
-                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
-
+                .orElseThrow(() -> new IllegalArgumentException("Equipment not found."));
         AnomalyConfig config = anomalyConfigRepository.findById(result.getConfigId())
-                .orElseThrow(() -> new IllegalArgumentException("이상 판단 기준이 존재하지 않습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("Anomaly config not found."));
 
-        processAlert(
+        return processAlert(
                 equipment,
                 result.getMotorAnomalyResultId(),
                 EquipmentType.MOTOR.name(),
@@ -79,17 +93,13 @@ public class AlertService {
         );
     }
 
-    public void sendTubeAlert(Long anomalyResultId) {
-        TubeAnomalyResult result = tubeAnomalyResultRepository.findById(anomalyResultId)
-                .orElseThrow(() -> new IllegalArgumentException("튜브 이상 감지 결과가 존재하지 않습니다."));
-
+    public boolean processTubeResult(TubeAnomalyResult result) {
         Equipment equipment = equipmentRepository.findById(result.getEquipmentId())
-                .orElseThrow(() -> new IllegalArgumentException("해당 설비가 존재하지 않습니다."));
-
+                .orElseThrow(() -> new IllegalArgumentException("Equipment not found."));
         AnomalyConfig config = anomalyConfigRepository.findById(result.getConfigId())
-                .orElseThrow(() -> new IllegalArgumentException("이상 판단 기준이 존재하지 않습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("Anomaly config not found."));
 
-        processAlert(
+        return processAlert(
                 equipment,
                 result.getTubeAnomalyResultId(),
                 EquipmentType.TUBE.name(),
@@ -99,7 +109,7 @@ public class AlertService {
         );
     }
 
-    private void processAlert(
+    private boolean processAlert(
             Equipment equipment,
             Long anomalyResultId,
             String anomalyResultType,
@@ -108,6 +118,7 @@ public class AlertService {
             AnomalyConfig config
     ) {
         String currentSeverity = calculateSeverity(anomalyScore, config);
+        equipment.updateStatus(EquipmentStatus.valueOf(currentSeverity), occurredAt);
 
         String previousSeverity = alertHistoryRepository
                 .findTopByEquipmentIdAndAnomalyResultTypeOrderByAlertIdDesc(
@@ -118,11 +129,11 @@ public class AlertService {
                 .orElse("NORMAL");
 
         if (previousSeverity.equals(currentSeverity)) {
-            return;
+            return false;
         }
 
         String message = createMessage(equipment.getEquipmentName(), currentSeverity, anomalyScore, occurredAt);
-        slackWebhookService.sendMessage(message);
+        boolean sent = slackWebhookService.sendMessage(message);
 
         AlertHistory alertHistory = AlertHistory.builder()
                 .equipmentId(equipment.getEquipmentId())
@@ -132,11 +143,12 @@ public class AlertService {
                 .severity(currentSeverity)
                 .message(message)
                 .channel("SLACK")
-                .sendStatus("SUCCESS")
+                .sendStatus(sent ? "SUCCESS" : "FAILED")
                 .createdAt(LocalDateTime.now())
                 .build();
 
         alertHistoryRepository.save(alertHistory);
+        return true;
     }
 
     private String calculateSeverity(Double score, AnomalyConfig config) {
@@ -158,15 +170,15 @@ public class AlertService {
             LocalDateTime occurredAt
     ) {
         if ("NORMAL".equals(severity)) {
-            return "[NORMAL] 설비 상태가 정상으로 복구되었습니다.\n"
-                    + "설비: " + equipmentName + "\n"
-                    + "시간: " + occurredAt + "\n"
-                    + "점수: " + anomalyScore;
+            return "[NORMAL] Equipment recovered.\n"
+                    + "Equipment: " + equipmentName + "\n"
+                    + "Time: " + occurredAt + "\n"
+                    + "Score: " + anomalyScore;
         }
 
-        return "[" + severity + "] 설비 이상이 감지되었습니다.\n"
-                + "설비: " + equipmentName + "\n"
-                + "시간: " + occurredAt + "\n"
-                + "점수: " + anomalyScore;
+        return "[" + severity + "] Equipment anomaly detected.\n"
+                + "Equipment: " + equipmentName + "\n"
+                + "Time: " + occurredAt + "\n"
+                + "Score: " + anomalyScore;
     }
 }

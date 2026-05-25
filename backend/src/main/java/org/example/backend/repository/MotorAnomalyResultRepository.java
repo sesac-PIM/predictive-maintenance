@@ -9,4 +9,6 @@ public interface MotorAnomalyResultRepository
         extends JpaRepository<MotorAnomalyResult, Long> {
 
     List<MotorAnomalyResult> findByEquipmentIdOrderByMeasuredAtDesc(Long equipmentId);
+
+    List<MotorAnomalyResult> findTop100ByAlertProcessedFalseOrderByMotorAnomalyResultIdAsc();
 }

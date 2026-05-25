@@ -35,4 +35,11 @@ public class TubeAnomalyResult {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "alert_processed", nullable = false)
+    private Boolean alertProcessed;
+
+    public void markAlertProcessed() {
+        this.alertProcessed = true;
+    }
 }
