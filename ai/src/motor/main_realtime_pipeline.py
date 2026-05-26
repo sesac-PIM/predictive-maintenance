@@ -84,6 +84,56 @@ def to_db_datetime(value):
     return value
 
 
+def upsert_motor_sensor_thresholds(
+    cursor,
+    equipment_id: int,
+    config_id: int,
+    values_df: pd.DataFrame,
+    target_cols: list[str],
+    window_start_at,
+    window_end_at,
+) -> None:
+    for sensor_tag in target_cols:
+        series = pd.to_numeric(values_df[sensor_tag], errors="coerce").dropna()
+        if series.empty:
+            continue
+
+        mean = float(series.mean())
+        std = float(series.std(ddof=0))
+        if not np.isfinite(mean):
+            continue
+        if not np.isfinite(std):
+            std = 0.0
+
+        lower_threshold = mean - (3 * std)
+        upper_threshold = mean + (3 * std)
+        if lower_threshold >= upper_threshold:
+            lower_threshold -= 0.001
+            upper_threshold += 0.001
+
+        cursor.execute(
+            """
+            INSERT INTO motor_sensor_threshold (
+                equipment_id, config_id, sensor_tag, window_start_at, window_end_at,
+                lower_threshold, upper_threshold
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (equipment_id, config_id, sensor_tag, window_start_at, window_end_at)
+            DO UPDATE SET
+                lower_threshold = EXCLUDED.lower_threshold,
+                upper_threshold = EXCLUDED.upper_threshold
+            """,
+            (
+                equipment_id,
+                config_id,
+                sensor_tag,
+                to_db_datetime(window_start_at),
+                to_db_datetime(window_end_at),
+                to_db_float(lower_threshold),
+                to_db_float(upper_threshold),
+            ),
+        )
+
+
 def evaluate_domain_rules(window_df: pd.DataFrame, cfg: dict) -> tuple[list[str], list[str]]:
     detected_events = []
     logs = []
@@ -403,6 +453,7 @@ def process_component_window(
     window_start_at = df["measured_at"].iloc[0]
     window_end_at = df["measured_at"].iloc[-1]
     duration_sec = int((window_end_at - window_start_at).total_seconds())
+    threshold_values = component_values
 
     recent_current = current_values.tail(10).dropna()
     if latest_current <= 0 or (not recent_current.empty and (recent_current <= cfg["run_threshold"]).all()):
@@ -418,6 +469,7 @@ def process_component_window(
                 f"need {MOTOR_WINDOW_SIZE} complete rows, found {len(component_df)}"
             )
             return False
+        threshold_values = component_df[target_cols]
 
         features = {f"{col}_mean": component_df[col].mean() for col in target_cols}
         features.update({f"{col}_std": component_df[col].std() for col in target_cols})
@@ -454,6 +506,16 @@ def process_component_window(
                 "sensor_value": float(component_df[col].iloc[-1]),
                 "contribution_score": float(squared_errors[idx_mean] + squared_errors[idx_std]),
             })
+
+    upsert_motor_sensor_thresholds(
+        cursor,
+        equipment_id,
+        config_id,
+        threshold_values,
+        target_cols,
+        window_start_at,
+        window_end_at,
+    )
 
     cursor.execute(
         """
