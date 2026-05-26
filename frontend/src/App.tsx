@@ -1024,6 +1024,14 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
     });
   }, [alertLogs, equipments, plant.name, contributionsByAnomaly, alertAnomaliesByTarget, latestAnomalies]);
 
+  useEffect(() => {
+    if (!selectedLog) return;
+    const freshLog = derivedLogs.find(log => log.id === selectedLog.id);
+    if (freshLog) {
+      setSelectedLog(freshLog);
+    }
+  }, [derivedLogs, selectedLog?.id]);
+
   return (
     <div className="bg-background text-[#dee3e8] font-sans overflow-hidden h-screen flex flex-col relative">
       <AnimatePresence>
