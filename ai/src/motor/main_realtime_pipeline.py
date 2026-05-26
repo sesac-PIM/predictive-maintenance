@@ -74,6 +74,16 @@ def calculate_severity(score: float, warning_threshold: float, danger_threshold:
     return "NORMAL"
 
 
+def to_db_float(value) -> float:
+    return float(value.item() if hasattr(value, "item") else value)
+
+
+def to_db_datetime(value):
+    if hasattr(value, "to_pydatetime"):
+        return value.to_pydatetime()
+    return value
+
+
 def evaluate_domain_rules(window_df: pd.DataFrame, cfg: dict) -> tuple[list[str], list[str]]:
     detected_events = []
     logs = []
@@ -327,7 +337,17 @@ def process_window(cursor, df: pd.DataFrame, equipment_id: int, config_id: int, 
             description = EXCLUDED.description
         RETURNING motor_anomaly_result_id
         """,
-        (equipment_id, config_id, window_start_at, window_end_at, window_end_at, final_score, final_event, duration_sec, final_description),
+        (
+            equipment_id,
+            config_id,
+            to_db_datetime(window_start_at),
+            to_db_datetime(window_end_at),
+            to_db_datetime(window_end_at),
+            to_db_float(final_score),
+            final_event,
+            duration_sec,
+            final_description,
+        ),
     )
     result_id = int(cursor.fetchone()[0])
 
@@ -450,7 +470,18 @@ def process_component_window(
             description = EXCLUDED.description
         RETURNING motor_anomaly_result_id
         """,
-        (equipment_id, config_id, component_name, window_start_at, window_end_at, window_end_at, final_score, final_event, duration_sec, final_description),
+        (
+            equipment_id,
+            config_id,
+            component_name,
+            to_db_datetime(window_start_at),
+            to_db_datetime(window_end_at),
+            to_db_datetime(window_end_at),
+            to_db_float(final_score),
+            final_event,
+            duration_sec,
+            final_description,
+        ),
     )
     result_id = int(cursor.fetchone()[0])
 
