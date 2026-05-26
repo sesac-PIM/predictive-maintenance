@@ -367,18 +367,40 @@ def process_component_window(
         print(f"[SKIP] equipment_id={equipment_id}: need {MOTOR_WINDOW_SIZE} rows, found {len(df)}")
         return False
 
+    target_cols = cfg["target_cols"]
+    missing_cols = [col for col in target_cols if col not in df.columns]
+    if missing_cols:
+        print(f"[SKIP] equipment_id={equipment_id} component={component_name}: missing columns {missing_cols}")
+        return False
+
+    component_values = df[target_cols].apply(pd.to_numeric, errors="coerce")
+    current_values = component_values[cfg["current_col"]]
+    latest_current = current_values.iloc[-1]
+    if pd.isna(latest_current):
+        print(f"[SKIP] equipment_id={equipment_id} component={component_name}: no current data at window end")
+        return False
+
     window_start_at = df["measured_at"].iloc[0]
     window_end_at = df["measured_at"].iloc[-1]
     duration_sec = int((window_end_at - window_start_at).total_seconds())
 
-    if (df[cfg["current_col"]].iloc[-10:] <= cfg["run_threshold"]).all():
+    recent_current = current_values.tail(10).dropna()
+    if latest_current <= 0 or (not recent_current.empty and (recent_current <= cfg["run_threshold"]).all()):
         final_score = 0.0
         final_event = "STOP"
         final_description = f"[{component_name}] Equipment current is below run threshold."
         contributions = []
     else:
-        features = {f"{col}_mean": df[col].mean() for col in cfg["target_cols"]}
-        features.update({f"{col}_std": df[col].std() for col in cfg["target_cols"]})
+        component_df = pd.concat([df[["measured_at"]], component_values], axis=1).dropna(subset=target_cols)
+        if len(component_df) < MOTOR_WINDOW_SIZE:
+            print(
+                f"[SKIP] equipment_id={equipment_id} component={component_name}: "
+                f"need {MOTOR_WINDOW_SIZE} complete rows, found {len(component_df)}"
+            )
+            return False
+
+        features = {f"{col}_mean": component_df[col].mean() for col in target_cols}
+        features.update({f"{col}_std": component_df[col].std() for col in target_cols})
         x_df = pd.DataFrame([features])
 
         scaler, autoencoder = load_component_model(component_name, model_cache)
@@ -388,7 +410,7 @@ def process_component_window(
         raw_error = np.mean(np.square(x_scaled - pred))
         final_score = min(1.0, raw_error / cfg["denominator"])
 
-        events, logs = evaluate_domain_rules(df, cfg)
+        events, logs = evaluate_domain_rules(component_df, cfg)
         if events == ["NORMAL"]:
             if final_score > cfg["upper_threshold"]:
                 events = ["UNKNOWN_CRITICAL"]
@@ -404,12 +426,12 @@ def process_component_window(
         contributions = []
         feature_names = x_df.columns.tolist()
         squared_errors = np.squeeze(np.square(x_scaled - pred))
-        for col in cfg["target_cols"]:
+        for col in target_cols:
             idx_mean = feature_names.index(f"{col}_mean")
             idx_std = feature_names.index(f"{col}_std")
             contributions.append({
                 "sensor_tag": col,
-                "sensor_value": float(df[col].iloc[-1]),
+                "sensor_value": float(component_df[col].iloc[-1]),
                 "contribution_score": float(squared_errors[idx_mean] + squared_errors[idx_std]),
             })
 

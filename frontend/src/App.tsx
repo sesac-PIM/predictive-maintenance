@@ -279,6 +279,12 @@ function sensorValueFromRow(row: ApiSensorRow | undefined, tag: string) {
   return typeof value === 'number' ? value : undefined;
 }
 
+function displaySensorValue(row: ApiSensorRow | undefined, tag: string, isMotor: boolean) {
+  const value = sensorValueFromRow(row, tag);
+  if (value == null) return undefined;
+  return isMotor && tag.startsWith('ii') && value < 0 ? 0 : value;
+}
+
 function latestSensorRow(rows: ApiSensorRow[]) {
   return [...rows].sort((a, b) => {
     const aTime = a.measuredAt ? new Date(a.measuredAt).getTime() : 0;
@@ -1802,12 +1808,12 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                       <div className="flex justify-between items-end">
                         <span className="font-mono text-[11px] text-[#38bdf8]/70 group-hover:text-[#38bdf8] transition-colors">{getSensorDisplayName(tag)}</span>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-white font-data-lg text-lg tracking-tighter">{sensorValueFromRow(latestSensor, tag) == null ? '-' : sensorValueFromRow(latestSensor, tag)!.toFixed(2)}</span>
+                          <span className="text-white font-data-lg text-lg tracking-tighter">{displaySensorValue(latestSensor, tag, activeMainComp === 'motor') == null ? '-' : displaySensorValue(latestSensor, tag, activeMainComp === 'motor')!.toFixed(2)}</span>
                           <span className="text-[9px] text-gray-600 font-bold uppercase whitespace-nowrap">현재값</span>
                         </div>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full relative overflow-hidden">
-                        <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(0, Math.min(100, Number(sensorValueFromRow(latestSensor, tag) ?? 0)))}%` }} className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#38bdf8]/10 to-[#38bdf8]/40 shadow-[0_0_8px_#38bdf8/20]"></motion.div>
+                        <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(0, Math.min(100, Number(displaySensorValue(latestSensor, tag, activeMainComp === 'motor') ?? 0)))}%` }} className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#38bdf8]/10 to-[#38bdf8]/40 shadow-[0_0_8px_#38bdf8/20]"></motion.div>
                       </div>
                     </div>
                   ))}
@@ -1884,12 +1890,12 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                       <div className="flex justify-between items-end">
                         <span className="font-mono text-[11px] text-[#38bdf8]/70 group-hover:text-[#38bdf8] transition-colors">{getSensorDisplayName(tag)}</span>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-white font-data-lg text-lg tracking-tighter">{sensorValueFromRow(latestSensor, tag) == null ? '-' : sensorValueFromRow(latestSensor, tag)!.toFixed(2)}</span>
+                          <span className="text-white font-data-lg text-lg tracking-tighter">{displaySensorValue(latestSensor, tag, activeMainComp === 'motor') == null ? '-' : displaySensorValue(latestSensor, tag, activeMainComp === 'motor')!.toFixed(2)}</span>
                           <span className="text-[9px] text-gray-600 font-bold uppercase whitespace-nowrap">현재값</span>
                         </div>
                       </div>
                       <div className="h-2 bg-white/5 rounded-full relative overflow-hidden">
-                        <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(0, Math.min(100, Number(sensorValueFromRow(latestSensor, tag) ?? 0)))}%` }} className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#38bdf8]/10 to-[#38bdf8]/40 shadow-[0_0_8px_#38bdf8/20]"></motion.div>
+                        <motion.div initial={{ width: 0 }} animate={{ width: `${Math.max(0, Math.min(100, Number(displaySensorValue(latestSensor, tag, activeMainComp === 'motor') ?? 0)))}%` }} className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#38bdf8]/10 to-[#38bdf8]/40 shadow-[0_0_8px_#38bdf8/20]"></motion.div>
                       </div>
                     </div>
                   ))}
