@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public class MotorAnomalyResponse {
 
     private String equipmentType;
+    private String componentName;
     private Long anomalyResultId;
     private LocalDateTime measuredAt;
     private Double anomalyScore;

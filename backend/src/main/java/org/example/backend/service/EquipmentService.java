@@ -2,6 +2,7 @@ package org.example.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.example.backend.domain.anomaly.AnomalyConfig;
+import org.example.backend.domain.anomaly.MotorAnomalyResult;
 import org.example.backend.domain.equipment.Equipment;
 import org.example.backend.domain.sensor.MotorSensorData;
 import org.example.backend.domain.sensor.TubeSensorData;
@@ -139,11 +140,19 @@ public class EquipmentService {
                 .toList();
     }
 
-    public List<?> getAnomalies(Long equipmentId) {
+    public List<?> getAnomalies(Long equipmentId, String component) {
         Equipment equipment = findEquipment(equipmentId);
 
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
-            return motorAnomalyResultRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId)
+            String componentName = normalizeMotorComponent(component);
+            List<MotorAnomalyResult> results = componentName == null
+                    ? motorAnomalyResultRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId)
+                    : motorAnomalyResultRepository.findByEquipmentIdAndComponentNameOrderByMeasuredAtDesc(
+                            equipmentId,
+                            componentName
+                    );
+
+            return results
                     .stream()
                     .map(result -> {
                         AnomalyConfig config = findConfig(result.getConfigId());
@@ -154,6 +163,7 @@ public class EquipmentService {
 
                         return MotorAnomalyResponse.builder()
                                 .equipmentType(equipment.getEquipmentType().name())
+                                .componentName(result.getComponentName())
                                 .anomalyResultId(result.getMotorAnomalyResultId())
                                 .measuredAt(result.getMeasuredAt())
                                 .anomalyScore(result.getAnomalyScore())
@@ -253,5 +263,13 @@ public class EquipmentService {
         }
 
         return "NORMAL";
+    }
+
+    private String normalizeMotorComponent(String component) {
+        if (component == null || component.isBlank()) {
+            return null;
+        }
+
+        return component.trim().toUpperCase().replace('-', '_').replace(' ', '_');
     }
 }

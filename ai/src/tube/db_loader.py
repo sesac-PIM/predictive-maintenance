@@ -91,8 +91,25 @@ def load_and_insert():
         cur = conn.cursor()
         equipment_ids = resolve_tube_equipment_ids(cur)
 
-        print(f"Clearing existing tube_sensor_data for {len(equipment_ids)} TUBE equipments...")
+        print(f"Clearing TUBE source and derived data for {len(equipment_ids)} TUBE equipments...")
+        cur.execute("""
+            DELETE FROM tube_anomaly_sensor_contribution
+            WHERE tube_anomaly_result_id IN (
+                SELECT tube_anomaly_result_id
+                FROM tube_anomaly_result
+                WHERE equipment_id = ANY(%s)
+            )
+        """, (equipment_ids,))
+        cur.execute("DELETE FROM alert_history WHERE equipment_id = ANY(%s) AND anomaly_result_type = 'TUBE'", (equipment_ids,))
+        cur.execute("DELETE FROM tube_anomaly_result WHERE equipment_id = ANY(%s)", (equipment_ids,))
+        cur.execute("DELETE FROM inference_checkpoint WHERE equipment_id = ANY(%s) AND equipment_type = 'TUBE'", (equipment_ids,))
         cur.execute("DELETE FROM tube_sensor_data WHERE equipment_id = ANY(%s)", (equipment_ids,))
+        cur.execute("""
+            UPDATE equipment
+            SET status = 'NORMAL',
+                status_updated_at = CURRENT_TIMESTAMP
+            WHERE equipment_id = ANY(%s)
+        """, (equipment_ids,))
 
         query = """
             INSERT INTO tube_sensor_data (

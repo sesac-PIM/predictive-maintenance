@@ -16,6 +16,8 @@ public class MotorAnomalyResult {
 
     private Long configId;
 
+    private String componentName;
+
     private LocalDateTime measuredAt;
 
     private Double anomalyScore;

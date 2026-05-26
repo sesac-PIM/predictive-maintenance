@@ -115,8 +115,25 @@ def load_and_insert() -> None:
             equipment_ids = resolve_motor_equipment_ids(cursor)
             config_id = resolve_motor_config_id(cursor)
 
-            print(f"Clearing motor_sensor_data for {len(equipment_ids)} MOTOR equipments")
+            print(f"Clearing MOTOR source and derived data for {len(equipment_ids)} MOTOR equipments")
+            cursor.execute("""
+                DELETE FROM motor_anomaly_sensor_contribution
+                WHERE motor_anomaly_result_id IN (
+                    SELECT motor_anomaly_result_id
+                    FROM motor_anomaly_result
+                    WHERE equipment_id = ANY(%s)
+                )
+            """, (equipment_ids,))
+            cursor.execute("DELETE FROM alert_history WHERE equipment_id = ANY(%s) AND anomaly_result_type = 'MOTOR'", (equipment_ids,))
+            cursor.execute("DELETE FROM motor_anomaly_result WHERE equipment_id = ANY(%s)", (equipment_ids,))
+            cursor.execute("DELETE FROM inference_checkpoint WHERE equipment_id = ANY(%s) AND equipment_type = 'MOTOR'", (equipment_ids,))
             cursor.execute("DELETE FROM motor_sensor_data WHERE equipment_id = ANY(%s)", (equipment_ids,))
+            cursor.execute("""
+                UPDATE equipment
+                SET status = 'NORMAL',
+                    status_updated_at = CURRENT_TIMESTAMP
+                WHERE equipment_id = ANY(%s)
+            """, (equipment_ids,))
 
             total_rows = 0
             for equipment_id in equipment_ids:

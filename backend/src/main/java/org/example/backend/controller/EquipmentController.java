@@ -44,8 +44,11 @@ public class EquipmentController {
     }
 
     @GetMapping("/{equipmentId}/anomalies")
-    public List<?> getAnomalies(@PathVariable Long equipmentId) {
-        return equipmentService.getAnomalies(equipmentId);
+    public List<?> getAnomalies(
+            @PathVariable Long equipmentId,
+            @RequestParam(required = false) String component
+    ) {
+        return equipmentService.getAnomalies(equipmentId, component);
     }
 
     @GetMapping("/{equipmentId}/anomalies/{anomalyResultId}/contributions")

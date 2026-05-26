@@ -37,6 +37,7 @@ type ApiEquipment = {
 type ApiAnomaly = {
   equipmentType?: string;
   anomalyResultId: number;
+  componentName?: string;
   measuredAt?: string;
   anomalyScore: number;
   severity: 'NORMAL' | 'WARNING' | 'DANGER' | string;
@@ -108,7 +109,7 @@ declare global {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
-const KAKAO_MAP_KEY = import.meta.env.VITE_KAKAO_MAP_KEY || ''; // 카카오맵 JavaScript 키(.env) 자리
+const KAKAO_MAP_KEY = (import.meta.env.VITE_KAKAO_MAP_KEY || '').replace(/\s+/g, ''); // 카카오맵 JavaScript 키(.env) 자리
 const TUBE_DIAGRAM_SRC = '/tube-diagram.png';
 const REALTIME_UPDATE_EVENT = 'pm:realtime-update';
 
@@ -240,6 +241,13 @@ function alertTargetKey(alert: Pick<ApiAlert, 'equipmentId' | 'anomalyResultId' 
   return `${alert.anomalyResultType || 'UNKNOWN'}:${alert.equipmentId || 'unknown'}:${alert.anomalyResultId || 'unknown'}`;
 }
 
+function alertSendTitle(alert: ApiAlert) {
+  const channel = alert.channel || 'Slack';
+  if (alert.sendStatus === 'SUCCESS') return `${channel} send success`;
+  if (alert.sendStatus === 'FAILED') return `${channel} send failed`;
+  return `${channel} send pending`;
+}
+
 function scoreFromAlertMessage(message?: string) {
   if (!message) return undefined;
   const numbers = [...message.matchAll(/\b\d+(?:\.\d+)?\b/g)].map(match => Number(match[0]));
@@ -334,7 +342,7 @@ const KakaoPlantMap = ({ plants, selectedPlantId, onPlantClick }: { plants: UiPl
   }, [ready, plants, selectedPlantId, onPlantClick]);
 
   if (!KAKAO_MAP_KEY) return null;
-  return <div ref={mapRef} className="absolute inset-0 z-10 opacity-90" />;
+  return <div ref={mapRef} className="absolute inset-0 z-20 opacity-100" />;
 };
 
 const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) => {
@@ -708,7 +716,6 @@ const DashboardPage = ({ onNavigateToDetail }: { onNavigateToDetail: (plantId: s
           <div className="absolute inset-0 grid-bg opacity-40 z-0"></div>
           <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/50 pointer-events-none z-1"></div>
           
-          {/* Simulated Map View of South Korea */}
           <motion.div 
             className="relative w-[600px] h-[800px] z-10"
             animate={{ 
@@ -778,7 +785,7 @@ const DashboardPage = ({ onNavigateToDetail }: { onNavigateToDetail: (plantId: s
             })}
           </motion.div>
 
-          <div className="absolute bottom-margin right-margin flex flex-col gap-2 z-20">
+          <div className="absolute bottom-margin right-margin flex flex-col gap-2 z-30">
             <button 
               onClick={handleFocus}
               className="glass-panel w-12 h-12 rounded-lg flex items-center justify-center hover:bg-surface-container-highest transition-colors shadow-lg border-primary/20 active:scale-90"
@@ -1265,7 +1272,7 @@ const HeaderActions = () => {
       .then(list => setAlerts(list.slice(0, 5).map((alert, index) => ({
         id: alert.alertId || index + 1,
         type: normalizeSeverity(undefined, alert.severity || 'NORMAL'),
-        title: `${alert.channel || 'Slack'} 알림 ${alert.sendStatus === 'FAILED' ? '실패' : '전송 완료'}`,
+        title: alertSendTitle(alert),
         desc: readableAlertMessage(alert),
         time: formatApiTime(alert.occurredAt).split(' ').slice(-1)[0] || '',
       }))))
@@ -1475,6 +1482,14 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
     E: 'VHP'
   };
 
+  const motorComponentNames: Record<string, string> = {
+    A: 'MAC_A',
+    B: 'MAC_B',
+    C: 'BAC',
+    D: 'DGAN',
+    E: 'VHP'
+  };
+
   const gasifierSensorGroups: Record<string, string[]> = {
     TUBE: ['tag_13tt0064', 'tag_15pdt0002a', 'tag_13pdt0067', 'tag_13fi0044', 'tag_13ffyc0046', 'tag_13fy0045', 'tag_13jyi9001', 'tag_10ind0001', 'bopc1_1_16200_fi_po041']
   };
@@ -1487,6 +1502,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
   const sensorGroupsLabels = activeMainComp === 'motor' ? motorSensorLabels : gasifierSensorLabels;
   const activeGroupKey = sensorGroups[activeTab] ? activeTab : Object.keys(sensorGroups)[0];
   const activeSensors = sensorGroups[activeGroupKey];
+  const activeMotorComponentName = activeMainComp === 'motor' ? motorComponentNames[activeGroupKey] : undefined;
   const activeEquipment = equipments.find(e => e.unitNo === activeGenId && (activeMainComp === 'motor' ? e.equipmentType === 'MOTOR' : e.equipmentType === 'TUBE'));
 
   useEffect(() => {
@@ -1502,8 +1518,11 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
     let cancelled = false;
     const loadEquipmentData = async () => {
       try {
+        const anomalyPath = activeMotorComponentName
+          ? `/api/equipments/${activeEquipment.equipmentId}/anomalies?component=${encodeURIComponent(activeMotorComponentName)}`
+          : `/api/equipments/${activeEquipment.equipmentId}/anomalies`;
         const [anomalies, sensors, thresholds] = await Promise.all([
-          apiRequest<ApiAnomaly[]>(`/api/equipments/${activeEquipment.equipmentId}/anomalies`),
+          apiRequest<ApiAnomaly[]>(anomalyPath),
           apiRequest<ApiSensorRow[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-data`),
           apiRequest<ApiThreshold[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-thresholds`),
         ]);
@@ -1519,7 +1538,10 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
         if (latest) {
           try {
             const list = await apiRequest<ApiContribution[]>(`/api/equipments/${activeEquipment.equipmentId}/anomalies/${latest.anomalyResultId}/contributions`);
-            if (!cancelled) setContributions(list);
+            const visibleList = activeMainComp === 'motor'
+              ? list.filter(item => activeSensors.includes(item.sensorTag))
+              : list;
+            if (!cancelled) setContributions(visibleList);
           } catch {
             if (!cancelled) setContributions([]);
           }
@@ -1540,7 +1562,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
     return () => {
       cancelled = true;
     };
-  }, [activeEquipment?.equipmentId, realtimeTick]);
+  }, [activeEquipment?.equipmentId, activeMainComp, activeGroupKey, activeMotorComponentName, realtimeTick]);
 
   const componentLabel = activeMainComp === 'motor' ? '고압전동기' : '가스화기';
   const graphLabel = activeMainComp === 'motor' ? '통합 이상 수치 추이' : '가스화기 튜브 이상 수치 추이';
