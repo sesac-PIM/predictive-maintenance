@@ -286,6 +286,13 @@ function severityRank(severity?: string) {
   return 0;
 }
 
+function pickHighestSeverity(severities: Array<string | undefined>) {
+  return severities.reduce((best, severity) => {
+    const current = normalizeSeverity(undefined, severity || 'NORMAL');
+    return severityRank(current) > severityRank(best) ? current : best;
+  }, 'NORMAL');
+}
+
 function pickMostSevereAnomaly(items: ApiAnomaly[]) {
   return items.reduce<ApiAnomaly | undefined>((best, item) => {
     if (!best) return item;
@@ -981,11 +988,17 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
     const unitEquipments = equipments.filter(e => e.unitNo === id);
     const gasifierEquipment = unitEquipments.find(e => e.equipmentType === 'TUBE');
     const motorEquipment = unitEquipments.find(e => e.equipmentType === 'MOTOR');
-    const gasifierScore = gasifierEquipment ? latestAnomalies[gasifierEquipment.equipmentId]?.anomalyScore : undefined;
-    const motorScore = motorEquipment ? latestAnomalies[motorEquipment.equipmentId]?.anomalyScore : undefined;
+    const gasifierAnomaly = gasifierEquipment ? latestAnomalies[gasifierEquipment.equipmentId] : undefined;
+    const motorAnomaly = motorEquipment ? latestAnomalies[motorEquipment.equipmentId] : undefined;
+    const gasifierScore = gasifierAnomaly?.anomalyScore;
+    const motorScore = motorAnomaly?.anomalyScore;
     const scores = [gasifierScore, motorScore].filter((n): n is number => typeof n === 'number');
     const score = scores.length ? Math.max(...scores) : undefined;
-    const severity = normalizeSeverity(score, unitEquipments.find(e => e.status)?.status);
+    const severity = pickHighestSeverity([
+      gasifierAnomaly ? normalizeSeverity(gasifierScore, gasifierAnomaly.severity) : normalizeSeverity(undefined, gasifierEquipment?.status),
+      motorAnomaly ? normalizeSeverity(motorScore, motorAnomaly.severity) : normalizeSeverity(undefined, motorEquipment?.status),
+      normalizeSeverity(score),
+    ]);
     return {
       id,
       status: 'running',
