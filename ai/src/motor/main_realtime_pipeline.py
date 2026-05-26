@@ -315,17 +315,16 @@ def process_window(cursor, df: pd.DataFrame, equipment_id: int, config_id: int, 
     cursor.execute(
         """
         INSERT INTO motor_anomaly_result (
-            equipment_id, config_id, window_start_at, window_end_at, measured_at,
+            equipment_id, config_id, component_name, window_start_at, window_end_at, measured_at,
             anomaly_score, event_type, duration_sec, description
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (equipment_id, config_id, window_start_at, window_end_at)
+        ) VALUES (%s, %s, 'ALL', %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (equipment_id, config_id, component_name, window_start_at, window_end_at)
         DO UPDATE SET
             measured_at = EXCLUDED.measured_at,
             anomaly_score = EXCLUDED.anomaly_score,
             event_type = EXCLUDED.event_type,
             duration_sec = EXCLUDED.duration_sec,
-            description = EXCLUDED.description,
-            alert_processed = FALSE
+            description = EXCLUDED.description
         RETURNING motor_anomaly_result_id
         """,
         (equipment_id, config_id, window_start_at, window_end_at, window_end_at, final_score, final_event, duration_sec, final_description),
@@ -353,12 +352,129 @@ def process_window(cursor, df: pd.DataFrame, equipment_id: int, config_id: int, 
     return True
 
 
+def process_component_window(
+    cursor,
+    df: pd.DataFrame,
+    equipment_id: int,
+    config_id: int,
+    component_name: str,
+    cfg: dict,
+    warning_threshold: float,
+    danger_threshold: float,
+    model_cache: dict,
+) -> bool:
+    if len(df) < MOTOR_WINDOW_SIZE:
+        print(f"[SKIP] equipment_id={equipment_id}: need {MOTOR_WINDOW_SIZE} rows, found {len(df)}")
+        return False
+
+    window_start_at = df["measured_at"].iloc[0]
+    window_end_at = df["measured_at"].iloc[-1]
+    duration_sec = int((window_end_at - window_start_at).total_seconds())
+
+    if (df[cfg["current_col"]].iloc[-10:] <= cfg["run_threshold"]).all():
+        final_score = 0.0
+        final_event = "STOP"
+        final_description = f"[{component_name}] Equipment current is below run threshold."
+        contributions = []
+    else:
+        features = {f"{col}_mean": df[col].mean() for col in cfg["target_cols"]}
+        features.update({f"{col}_std": df[col].std() for col in cfg["target_cols"]})
+        x_df = pd.DataFrame([features])
+
+        scaler, autoencoder = load_component_model(component_name, model_cache)
+        x_df = x_df[scaler.feature_names_in_]
+        x_scaled = scaler.transform(x_df)
+        pred = autoencoder.predict(x_scaled, verbose=0)
+        raw_error = np.mean(np.square(x_scaled - pred))
+        final_score = min(1.0, raw_error / cfg["denominator"])
+
+        events, logs = evaluate_domain_rules(df, cfg)
+        if events == ["NORMAL"]:
+            if final_score > cfg["upper_threshold"]:
+                events = ["UNKNOWN_CRITICAL"]
+                logs = [f"[{component_name}] Unknown critical pattern detected."]
+            elif final_score > cfg["lower_threshold"]:
+                events = ["UNKNOWN_DRIFT"]
+                logs = [f"[{component_name}] Unknown pattern drift detected."]
+
+        hierarchy = ["BURST", "IMBALANCE", "UNKNOWN_CRITICAL", "LOAD_CHANGE", "TREND_CHANGE", "RELATION_CHANGE", "UNKNOWN_DRIFT", "NORMAL"]
+        final_event = next((event for event in hierarchy if event in events), "NORMAL")
+        final_description = " | ".join([f"[{component_name}] {log}" for log in logs[:8]]) if logs else f"[{component_name}] Equipment state is stable."
+
+        contributions = []
+        feature_names = x_df.columns.tolist()
+        squared_errors = np.squeeze(np.square(x_scaled - pred))
+        for col in cfg["target_cols"]:
+            idx_mean = feature_names.index(f"{col}_mean")
+            idx_std = feature_names.index(f"{col}_std")
+            contributions.append({
+                "sensor_tag": col,
+                "sensor_value": float(df[col].iloc[-1]),
+                "contribution_score": float(squared_errors[idx_mean] + squared_errors[idx_std]),
+            })
+
+    cursor.execute(
+        """
+        INSERT INTO motor_anomaly_result (
+            equipment_id, config_id, component_name, window_start_at, window_end_at, measured_at,
+            anomaly_score, event_type, duration_sec, description
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (equipment_id, config_id, component_name, window_start_at, window_end_at)
+        DO UPDATE SET
+            measured_at = EXCLUDED.measured_at,
+            anomaly_score = EXCLUDED.anomaly_score,
+            event_type = EXCLUDED.event_type,
+            duration_sec = EXCLUDED.duration_sec,
+            description = EXCLUDED.description
+        RETURNING motor_anomaly_result_id
+        """,
+        (equipment_id, config_id, component_name, window_start_at, window_end_at, window_end_at, final_score, final_event, duration_sec, final_description),
+    )
+    result_id = int(cursor.fetchone()[0])
+
+    for rank, contribution in enumerate(sorted(contributions, key=lambda x: x["contribution_score"], reverse=True), start=1):
+        cursor.execute(
+            """
+            INSERT INTO motor_anomaly_sensor_contribution (
+                motor_anomaly_result_id, sensor_tag, sensor_value, contribution_score, contribution_rank
+            ) VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (motor_anomaly_result_id, sensor_tag)
+            DO UPDATE SET
+                sensor_value = EXCLUDED.sensor_value,
+                contribution_score = EXCLUDED.contribution_score,
+                contribution_rank = EXCLUDED.contribution_rank
+            """,
+            (result_id, contribution["sensor_tag"], contribution["sensor_value"], contribution["contribution_score"], rank),
+        )
+
+    severity = calculate_severity(final_score, warning_threshold, danger_threshold)
+    print(f"[OK] equipment_id={equipment_id} component={component_name} score={final_score:.4f} severity={severity} event={final_event}")
+    return True
+
+
+def process_window_by_component(cursor, df: pd.DataFrame, equipment_id: int, config_id: int, warning_threshold: float, danger_threshold: float, model_cache: dict) -> bool:
+    processed = False
+    for component_name, cfg in COMPONENT_CONFIG.items():
+        processed = process_component_window(
+            cursor,
+            df,
+            equipment_id,
+            config_id,
+            component_name,
+            cfg,
+            warning_threshold,
+            danger_threshold,
+            model_cache,
+        ) or processed
+    return processed
+
+
 def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_threshold: float, danger_threshold: float, model_cache: dict) -> None:
     model_version = get_config_model_version(cursor, config_id)
 
     if MOTOR_RUN_MODE == "latest":
         df = fetch_latest_window(conn, equipment_id)
-        if process_window(cursor, df, equipment_id, config_id, warning_threshold, danger_threshold, model_cache):
+        if process_window_by_component(cursor, df, equipment_id, config_id, warning_threshold, danger_threshold, model_cache):
             update_checkpoint(cursor, equipment_id, model_version, df["measured_at"].iloc[-1])
             conn.commit()
         return
@@ -379,7 +495,7 @@ def process_equipment(conn, cursor, equipment_id: int, config_id: int, warning_t
 
     processed = 0
     for window_df in iter_window_frames(df, last_window_end_at):
-        if process_window(cursor, window_df, equipment_id, config_id, warning_threshold, danger_threshold, model_cache):
+        if process_window_by_component(cursor, window_df, equipment_id, config_id, warning_threshold, danger_threshold, model_cache):
             update_checkpoint(cursor, equipment_id, model_version, window_df["measured_at"].iloc[-1])
             processed += 1
         if processed % 50 == 0:

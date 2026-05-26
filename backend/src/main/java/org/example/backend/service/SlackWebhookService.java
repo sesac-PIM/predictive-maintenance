@@ -2,6 +2,7 @@ package org.example.backend.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -24,11 +25,22 @@ public class SlackWebhookService {
         Map<String, String> payload = Map.of("text", message);
 
         try {
-            restTemplate.postForEntity(
+            ResponseEntity<String> response = restTemplate.postForEntity(
                     webhookUrl,
                     payload,
                     String.class
             );
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                log.warn("Slack webhook send returned HTTP {}.", response.getStatusCode().value());
+                return false;
+            }
+
+            String body = response.getBody();
+            if (body != null && !body.isBlank() && !"ok".equalsIgnoreCase(body.trim())) {
+                log.warn("Slack webhook returned unexpected body: {}", body);
+                return false;
+            }
+
             return true;
         } catch (Exception e) {
             log.warn("Slack webhook send failed: {}", e.getMessage());

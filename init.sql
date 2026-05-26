@@ -255,6 +255,7 @@ CREATE TABLE motor_anomaly_result (
     motor_anomaly_result_id BIGSERIAL PRIMARY KEY,
     equipment_id BIGINT NOT NULL,
     config_id BIGINT NOT NULL,
+    component_name VARCHAR(30) NOT NULL DEFAULT 'ALL',
 
     window_start_at TIMESTAMP NOT NULL,
     window_end_at TIMESTAMP NOT NULL,
@@ -280,7 +281,7 @@ CREATE TABLE motor_anomaly_result (
         CHECK (window_start_at < window_end_at),
 
     CONSTRAINT uq_motor_anomaly_window
-        UNIQUE (equipment_id, config_id, window_start_at, window_end_at)
+        UNIQUE (equipment_id, config_id, component_name, window_start_at, window_end_at)
 );
 
 --------------------------------------------------
@@ -452,7 +453,7 @@ CREATE INDEX idx_tube_threshold_window
     ON tube_sensor_threshold(equipment_id, config_id, window_start_at, window_end_at);
 
 CREATE INDEX idx_motor_anomaly_equipment_window
-    ON motor_anomaly_result(equipment_id, window_start_at, window_end_at);
+    ON motor_anomaly_result(equipment_id, component_name, window_start_at, window_end_at);
 
 CREATE INDEX idx_tube_anomaly_equipment_window
     ON tube_anomaly_result(equipment_id, window_start_at, window_end_at);
