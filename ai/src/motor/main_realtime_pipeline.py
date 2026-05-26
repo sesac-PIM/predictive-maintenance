@@ -371,7 +371,8 @@ def process_component_window(
     window_end_at = df["measured_at"].iloc[-1]
     duration_sec = int((window_end_at - window_start_at).total_seconds())
 
-    if (df[cfg["current_col"]].iloc[-10:] <= cfg["run_threshold"]).all():
+    latest_current = df[cfg["current_col"]].iloc[-1]
+    if latest_current <= 0 or (df[cfg["current_col"]].iloc[-10:] <= cfg["run_threshold"]).all():
         final_score = 0.0
         final_event = "STOP"
         final_description = f"[{component_name}] Equipment current is below run threshold."
