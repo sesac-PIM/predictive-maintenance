@@ -112,6 +112,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080
 const KAKAO_MAP_KEY = (import.meta.env.VITE_KAKAO_MAP_KEY || '').replace(/\s+/g, ''); // 카카오맵 JavaScript 키(.env) 자리
 const TUBE_DIAGRAM_SRC = '/tube-diagram.png';
 const REALTIME_UPDATE_EVENT = 'pm:realtime-update';
+const AUTH_LOGOUT_EVENT = 'pm:auth-logout';
 
 function clearStoredToken() {
   localStorage.removeItem('accessToken');
@@ -138,6 +139,11 @@ function getStoredRefreshToken() {
 
 function emitRealtimeUpdate() {
   window.dispatchEvent(new CustomEvent(REALTIME_UPDATE_EVENT));
+}
+
+function emitLogout() {
+  clearStoredToken();
+  window.dispatchEvent(new CustomEvent(AUTH_LOGOUT_EVENT));
 }
 
 async function refreshAccessToken() {
@@ -267,8 +273,38 @@ function sortAnomaliesDesc(items: ApiAnomaly[]) {
   return [...items].sort((a, b) => {
     const aTime = a.measuredAt ? new Date(a.measuredAt).getTime() : 0;
     const bTime = b.measuredAt ? new Date(b.measuredAt).getTime() : 0;
-    return bTime - aTime;
+    if (bTime !== aTime) return bTime - aTime;
+    return (b.anomalyResultId || 0) - (a.anomalyResultId || 0);
   });
+}
+
+function severityRank(severity?: string) {
+  const upper = normalizeSeverity(undefined, severity || 'NORMAL');
+  if (upper === 'DANGER') return 3;
+  if (upper === 'WARNING') return 2;
+  if (upper === 'STOP') return 1;
+  return 0;
+}
+
+function pickMostSevereAnomaly(items: ApiAnomaly[]) {
+  return items.reduce<ApiAnomaly | undefined>((best, item) => {
+    if (!best) return item;
+    const itemRank = severityRank(item.severity);
+    const bestRank = severityRank(best.severity);
+    if (itemRank !== bestRank) return itemRank > bestRank ? item : best;
+    return item.anomalyScore > best.anomalyScore ? item : best;
+  }, undefined);
+}
+
+function latestAnomalySnapshot(items: ApiAnomaly[]) {
+  const sorted = sortAnomaliesDesc(items);
+  const latest = sorted[0];
+  if (!latest) return undefined;
+  const latestTime = latest.measuredAt ? new Date(latest.measuredAt).getTime() : 0;
+  return pickMostSevereAnomaly(sorted.filter(item => {
+    const time = item.measuredAt ? new Date(item.measuredAt).getTime() : 0;
+    return time === latestTime;
+  }));
 }
 
 function sensorValueFromRow(row: ApiSensorRow | undefined, tag: string) {
@@ -884,7 +920,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
     Promise.all(equipments.map(async equipment => {
       try {
         const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${equipment.equipmentId}/anomalies`);
-        return [equipment.equipmentId, anomalies[0]] as const;
+        return [equipment.equipmentId, latestAnomalySnapshot(anomalies)] as const;
       } catch {
         return [equipment.equipmentId, undefined] as const;
       }
@@ -898,8 +934,10 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       return;
     }
 
+    const equipmentIds = new Set(equipments.map(equipment => equipment.equipmentId));
     const uniqueTargets = alertLogs
       .filter((alert): alert is ApiAlert & { equipmentId: number; anomalyResultId: number } => Boolean(alert.equipmentId && alert.anomalyResultId))
+      .filter(alert => equipmentIds.has(alert.equipmentId))
       .filter((alert, index, list) => list.findIndex(item => alertTargetKey(item) === alertTargetKey(alert)) === index);
 
     if (uniqueTargets.length === 0) {
@@ -931,7 +969,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       setContributionsByAnomaly(Object.fromEntries(entries.map(([key, contributions]) => [key, contributions])));
       setAlertAnomaliesByTarget(Object.fromEntries(entries.map(([key, , anomaly]) => [key, anomaly])));
     });
-  }, [alertLogs]);
+  }, [alertLogs, equipments]);
 
   const unitCount = useMemo(() => {
     const unitNos = equipments.map(e => e.unitNo).filter((n): n is number => typeof n === 'number');
@@ -963,14 +1001,15 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   const derivedLogs = useMemo(() => {
     if (alertLogs.length === 0 || equipments.length === 0) return [];
     const equipmentById = new Map<number, ApiEquipment>(equipments.map(e => [e.equipmentId, e]));
-    return alertLogs.map((alert, index) => {
+    return alertLogs.flatMap((alert, index) => {
       const equipment = equipmentById.get(alert.equipmentId || -1);
+      if (!equipment) return [];
       const unitNo = equipment?.unitNo || 1;
       const type = (alert.anomalyResultType || equipment?.equipmentType || '').toUpperCase() === 'MOTOR' ? 'motor' : 'gasifier';
       const targetKey = alertTargetKey(alert);
       const score = alertAnomaliesByTarget[targetKey]?.anomalyScore ?? scoreFromAlertMessage(alert.message) ?? latestAnomalies[alert.equipmentId || -1]?.anomalyScore;
       const part = type === 'motor' ? '고압전동기' : '가스화기';
-      return {
+      return [{
         id: alert.alertId || index + 1,
         time: formatApiTime(alert.occurredAt),
         status: severityToStatus(alert.severity || 'NORMAL'),
@@ -981,9 +1020,17 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         message: readableAlertMessage(alert, part),
         contributions: alert.anomalyResultId ? (contributionsByAnomaly[targetKey] || []) : [],
         alerts: [{ ...alert, message: readableAlertMessage(alert, part) }],
-      };
+      }];
     });
   }, [alertLogs, equipments, plant.name, contributionsByAnomaly, alertAnomaliesByTarget, latestAnomalies]);
+
+  useEffect(() => {
+    if (!selectedLog) return;
+    const freshLog = derivedLogs.find(log => log.id === selectedLog.id);
+    if (freshLog) {
+      setSelectedLog(freshLog);
+    }
+  }, [derivedLogs, selectedLog?.id]);
 
   return (
     <div className="bg-background text-[#dee3e8] font-sans overflow-hidden h-screen flex flex-col relative">
@@ -1407,6 +1454,13 @@ const HeaderActions = () => {
                 </div>
               </div>
               <div className="mt-3 pt-3 border-t border-gray-800 text-[10px] text-gray-500">ROLE_ADMIN</div>
+              <button
+                onClick={emitLogout}
+                className="mt-3 w-full flex items-center justify-center gap-2 rounded-lg border border-gray-800 px-3 py-2 text-xs font-bold text-gray-300 hover:border-[#38bdf8]/40 hover:text-[#38bdf8] transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">logout</span>
+                로그아웃
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1921,6 +1975,20 @@ export default function App() {
   const [detailActiveMenu, setDetailActiveMenu] = useState<'generators' | 'logs'>('generators');
 
   const [activeComp, setActiveComp] = useState<'motor' | 'gasifier'>('motor');
+
+  useEffect(() => {
+    const handleLogout = () => {
+      setIsLoggedIn(false);
+      setView('login');
+      setActivePlantId('taean');
+      setActiveGeneratorId(1);
+      setDetailActiveMenu('generators');
+      setActiveComp('motor');
+    };
+
+    window.addEventListener(AUTH_LOGOUT_EVENT, handleLogout);
+    return () => window.removeEventListener(AUTH_LOGOUT_EVENT, handleLogout);
+  }, []);
 
   useEffect(() => {
     if (!isLoggedIn) return;
