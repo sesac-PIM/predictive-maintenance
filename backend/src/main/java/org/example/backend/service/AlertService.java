@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -83,23 +82,25 @@ public class AlertService {
                 .orElseThrow(() -> new IllegalArgumentException("Equipment not found."));
         AnomalyConfig config = anomalyConfigRepository.findById(result.getConfigId())
                 .orElseThrow(() -> new IllegalArgumentException("Anomaly config not found."));
-        Double worstScoreAtWindow = motorAnomalyResultRepository
+        MotorAnomalyResult worstResultAtWindow = motorAnomalyResultRepository
                 .findByEquipmentIdAndMeasuredAt(
                         result.getEquipmentId(),
                         result.getMeasuredAt()
                 )
                 .stream()
-                .map(MotorAnomalyResult::getAnomalyScore)
-                .filter(Objects::nonNull)
-                .max(Double::compareTo)
-                .orElse(result.getAnomalyScore());
+                .filter(candidate -> candidate.getAnomalyScore() != null)
+                .max((left, right) -> Double.compare(
+                        left.getAnomalyScore(),
+                        right.getAnomalyScore()
+                ))
+                .orElse(result);
 
         return processAlert(
                 equipment,
-                result.getMotorAnomalyResultId(),
+                worstResultAtWindow.getMotorAnomalyResultId(),
                 EquipmentType.MOTOR.name(),
-                result.getMeasuredAt(),
-                worstScoreAtWindow,
+                worstResultAtWindow.getMeasuredAt(),
+                worstResultAtWindow.getAnomalyScore(),
                 config
         );
     }
