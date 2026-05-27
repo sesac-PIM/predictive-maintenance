@@ -343,6 +343,18 @@ function chartDataFromAnomalies(items: ApiAnomaly[]) {
   }));
 }
 
+function percentFromDescription(value?: string) {
+  if (!value) return undefined;
+  const match = value.match(/(-?\d+(?:\.\d+)?)\s*%/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function formatSignedPercent(value?: number) {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const normalized = Math.abs(value) < 0.005 ? 0 : value;
+  return `${normalized > 0 ? '+' : ''}${normalized.toFixed(2)}%`;
+}
+
 const KakaoPlantMap = ({ plants, selectedPlantId, onPlantClick }: { plants: UiPlant[], selectedPlantId: string, onPlantClick: (id: string) => void }) => {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
@@ -1651,6 +1663,87 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
   const trendData = chartDataFromAnomalies(anomalyRows);
   const currentSeverity = normalizeSeverity(latestAnomaly?.anomalyScore, latestAnomaly?.severity);
   const showContribution = currentSeverity !== 'NORMAL';
+  const operationState = useMemo(() => {
+    const currentTag = activeMainComp === 'motor' ? activeSensors[0] : undefined;
+    const currentSeries = currentTag
+      ? sensorRows
+          .map(row => ({
+            time: row.measuredAt ? new Date(row.measuredAt).getTime() : 0,
+            value: sensorValueFromRow(row, currentTag),
+          }))
+          .filter((row): row is { time: number; value: number } => typeof row.value === 'number')
+          .sort((a, b) => b.time - a.time)
+      : [];
+
+    const latestCurrentRaw = currentSeries[0]?.value;
+    const latestCurrent = latestCurrentRaw == null ? undefined : Math.max(0, latestCurrentRaw);
+    const baseline = currentSeries[Math.min(29, currentSeries.length - 1)]?.value;
+    const measuredChangePercent = baseline && baseline > 0 && latestCurrentRaw != null
+      ? ((latestCurrentRaw - baseline) / baseline) * 100
+      : undefined;
+
+    const stateEvent = anomalyRows.find(event => {
+      const eventType = (event.eventType || '').toUpperCase();
+      return ['STOP', 'LOAD_CHANGE', 'TREND_CHANGE'].includes(eventType);
+    }) || latestAnomaly;
+    const eventType = (stateEvent?.eventType || '').toUpperCase();
+    const eventPercent = percentFromDescription(stateEvent?.description);
+    const changePercent = eventPercent ?? measuredChangePercent;
+    const severity = normalizeSeverity(stateEvent?.anomalyScore, stateEvent?.severity);
+
+    if (eventType === 'STOP' || (latestCurrentRaw != null && latestCurrentRaw <= 0)) {
+      return {
+        badge: '정지 감지',
+        center: '정지',
+        state: '정지',
+        change: latestCurrent == null ? '-' : `${latestCurrent.toFixed(2)} A`,
+        color: '#64748b',
+        lineClass: 'rotate-0',
+      };
+    }
+
+    if (eventType === 'LOAD_CHANGE') {
+      return {
+        badge: '부하 급변',
+        center: '변동',
+        state: '부하 급변',
+        change: formatSignedPercent(changePercent),
+        color: '#ffbd45',
+        lineClass: changePercent != null && changePercent < 0 ? 'rotate-[45deg]' : 'rotate-[-45deg]',
+      };
+    }
+
+    if (eventType === 'TREND_CHANGE') {
+      return {
+        badge: '추세 변화',
+        center: '추세',
+        state: changePercent != null && changePercent < 0 ? '하강 추세' : '상승 추세',
+        change: formatSignedPercent(changePercent),
+        color: '#38bdf8',
+        lineClass: changePercent != null && changePercent < 0 ? 'rotate-[45deg]' : 'rotate-[-45deg]',
+      };
+    }
+
+    if (severity === 'DANGER' || severity === 'WARNING') {
+      return {
+        badge: severity === 'DANGER' ? '위험 패턴' : '주의 패턴',
+        center: severity === 'DANGER' ? '위험' : '주의',
+        state: stateEvent?.eventType || severity,
+        change: formatSignedPercent(changePercent),
+        color: severity === 'DANGER' ? '#ff8181' : '#ffbd45',
+        lineClass: 'rotate-[-45deg]',
+      };
+    }
+
+    return {
+      badge: '정상 추적',
+      center: '정상',
+      state: '정상',
+      change: formatSignedPercent(changePercent),
+      color: '#38bdf8',
+      lineClass: changePercent != null && changePercent < 0 ? 'rotate-[45deg]' : 'rotate-[-45deg]',
+    };
+  }, [activeMainComp, activeSensors, anomalyRows, latestAnomaly, sensorRows]);
 
   const contributionPanel = (
     <section className="rounded-2xl p-5 border border-gray-800/50 bg-black/20 dashboard-card h-full">
@@ -1928,17 +2021,43 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                 <section className="w-3/5 bg-[#171c20]/50 rounded-2xl p-5 border border-[#38bdf8]/30 relative overflow-hidden flex flex-col dashboard-card">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-widest">운전 상태 변화</h3>
-                    <span className="text-[9px] px-2 py-0.5 bg-[#38bdf8]/10 text-[#38bdf8] rounded font-bold">편차 감지</span>
+                    <span
+                      className="text-[9px] px-2 py-0.5 rounded font-bold"
+                      style={{ backgroundColor: `${operationState.color}1a`, color: operationState.color }}
+                    >
+                      {operationState.badge}
+                    </span>
                   </div>
                   <div className="flex-1 flex items-center justify-center">
-                    <div className="relative w-24 h-24 border border-gray-700/50 rounded-full flex items-center justify-center">
-                      <div className="absolute w-10 h-10 bg-[#38bdf8]/5 rounded-full border border-[#38bdf8]/20 italic flex items-center justify-center text-[7px] text-gray-600">정상</div>
-                      <div className="absolute top-3 right-6 w-2 h-2 bg-[#38bdf8] rounded-full shadow-[0_0_10px_#38bdf8]"></div>
-                      <div className="absolute w-10 h-[1px] bg-gradient-to-r from-transparent to-[#38bdf8] rotate-[-45deg] origin-left ml-5 mt-[-10px]"></div>
+                    <div
+                      className="relative w-24 h-24 border rounded-full flex items-center justify-center"
+                      style={{ borderColor: `${operationState.color}55` }}
+                    >
+                      <div
+                        className="absolute w-10 h-10 rounded-full border italic flex items-center justify-center text-[7px] font-bold"
+                        style={{
+                          backgroundColor: `${operationState.color}0d`,
+                          borderColor: `${operationState.color}33`,
+                          color: operationState.color,
+                        }}
+                      >
+                        {operationState.center}
+                      </div>
+                      <div
+                        className="absolute top-3 right-6 w-2 h-2 rounded-full"
+                        style={{
+                          backgroundColor: operationState.color,
+                          boxShadow: `0 0 10px ${operationState.color}`,
+                        }}
+                      ></div>
+                      <div
+                        className={`absolute w-10 h-[1px] origin-left ml-5 mt-[-10px] ${operationState.lineClass}`}
+                        style={{ background: `linear-gradient(to right, transparent, ${operationState.color})` }}
+                      ></div>
                     </div>
                     <div className="ml-6 space-y-2">
-                      <p className="text-[10px] text-gray-400 font-bold">변화 크기: <span className="text-white">+1.24</span></p>
-                      <p className="text-[10px] text-gray-400 font-bold">현재 상태: <span className="text-white">고부하</span></p>
+                      <p className="text-[10px] text-gray-400 font-bold">변화 크기: <span className="text-white">{operationState.change}</span></p>
+                      <p className="text-[10px] text-gray-400 font-bold">현재 상태: <span className="text-white">{operationState.state}</span></p>
                     </div>
                   </div>
                 </section>
