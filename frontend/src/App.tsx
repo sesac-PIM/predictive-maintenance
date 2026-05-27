@@ -1039,6 +1039,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         time: formatApiTime(alert.occurredAt),
         status: severityToStatus(alert.severity || 'NORMAL'),
         score: score ?? 0,
+        unitNo,
         location: `${plant.name} ${unitNo}호기`,
         type,
         part,
@@ -1255,7 +1256,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
                   <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
                     {Array.from({ length: unitCount }).map((_, i) => {
                       const unit = i + 1;
-                      const hasLog = derivedLogs.some(log => log.location.startsWith(plant.name) && log.location.includes(`${unit}호기`) && log.type === activeLogSubMenu);
+                      const hasLog = derivedLogs.some(log => log.unitNo === unit && log.type === activeLogSubMenu);
                       return (
                         <button
                           key={unit}
@@ -1273,8 +1274,8 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
                 <div className="flex flex-col">
                   {/* 로그 리스트 */}
                   <div className="flex flex-col">
-                    {derivedLogs.filter(log => log.location.startsWith(plant.name) && log.location.includes(`${selectedLogUnit}호기`) && log.type === activeLogSubMenu).length > 0 ? (
-                      derivedLogs.filter(log => log.location.startsWith(plant.name) && log.location.includes(`${selectedLogUnit}호기`) && log.type === activeLogSubMenu).map(log => {
+                    {derivedLogs.filter(log => log.unitNo === selectedLogUnit && log.type === activeLogSubMenu).length > 0 ? (
+                      derivedLogs.filter(log => log.unitNo === selectedLogUnit && log.type === activeLogSubMenu).map(log => {
                         const [, unitName] = log.location.split(' ');
                         return (
                           <button 
