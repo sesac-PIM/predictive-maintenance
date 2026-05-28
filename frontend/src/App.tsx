@@ -424,10 +424,10 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
   };
 
   return (
-    <div className="h-full flex flex-col gap-2">
+    <div className="h-full min-w-0 flex flex-col gap-2">
       <div
         ref={chartRef}
-        className="min-h-0 flex-1"
+        className="min-h-0 min-w-0 flex-1"
         onWheel={event => {
           const scrollbar = scrollbarRef.current;
           if (!scrollbar || scrollbar.scrollWidth <= scrollbar.clientWidth) return;
@@ -441,7 +441,7 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={visibleData}>
             <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-            <XAxis dataKey="time" stroke="#64748b" fontSize={10} interval="preserveStartEnd" />
+            <XAxis dataKey="time" stroke="#64748b" fontSize={10} interval={0} />
             <YAxis domain={[0, yMax]} ticks={yTicks} allowDataOverflow stroke="#64748b" fontSize={10} />
             <Tooltip contentStyle={{ backgroundColor: '#11171c', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '11px' }} />
             <Line type="monotone" dataKey="score" stroke="#38bdf8" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -2091,8 +2091,8 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
           </>
         ) : (
           <>
-            <main className="flex-1 flex flex-col gap-4">
-              <section className="flex-1 bg-[#171c20]/80 rounded-2xl p-8 border border-gray-800/50 relative shadow-2xl overflow-hidden group dashboard-card">
+            <main className="min-w-0 flex-1 flex flex-col gap-4">
+              <section className="min-w-0 flex-1 bg-[#171c20]/80 rounded-2xl p-8 border border-gray-800/50 relative shadow-2xl overflow-hidden group dashboard-card">
                 <div className="flex justify-between items-start">
                   <div>
                     <h2 className="text-xl font-bold mb-1 font-headline-md text-[#38bdf8]">{graphLabel}</h2>
@@ -2106,7 +2106,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.03] pointer-events-none group-hover:opacity-[0.05] transition-opacity duration-700">
                   <span className="material-symbols-outlined text-[320px]">monitoring</span>
                 </div>
-                <div className="mt-12 w-full h-[75%] px-2 relative z-10">
+                <div className="mt-12 w-full min-w-0 h-[75%] px-2 relative z-10 overflow-hidden">
                   {trendData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-xs text-gray-500">이상 수치 데이터가 없습니다.</div>
                   ) : (
@@ -2164,7 +2164,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
               </div>
             </main>
 
-            <aside className="w-[30%] flex flex-col gap-4 bg-[#171c20]/50 rounded-2xl p-5 border border-gray-800/50 h-full overflow-hidden dashboard-card">
+            <aside className="w-[30%] shrink-0 flex flex-col gap-4 bg-[#171c20]/50 rounded-2xl p-5 border border-gray-800/50 h-full overflow-hidden dashboard-card">
               <section className="flex flex-col min-h-0 flex-1">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-xs font-bold text-[#38bdf8] uppercase tracking-[0.2em]">실시간 센서 현황</h3>
