@@ -349,68 +349,97 @@ function chartDataFromAnomalies(items: ApiAnomaly[]) {
 type TrendPoint = ReturnType<typeof chartDataFromAnomalies>[number];
 
 function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoint[]; yMax: number; scrollKey: string }) {
-  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const scrollbarRef = useRef<HTMLDivElement | null>(null);
   const pinnedToLatestRef = useRef(true);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [windowStart, setWindowStart] = useState(0);
 
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
+    const chart = chartRef.current;
+    if (!chart) return;
 
     const observer = new ResizeObserver(entries => {
       setViewportWidth(entries[0]?.contentRect.width || 0);
     });
-    observer.observe(viewport);
+    observer.observe(chart);
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    pinnedToLatestRef.current = true;
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    requestAnimationFrame(() => {
-      viewport.scrollLeft = viewport.scrollWidth - viewport.clientWidth;
-    });
-  }, [scrollKey]);
-
-  const visiblePointCount = Math.min(TREND_VISIBLE_POINTS, Math.max(1, data.length));
-  const chartWidth = viewportWidth > 0 && data.length > TREND_VISIBLE_POINTS
-    ? (viewportWidth / visiblePointCount) * data.length
+  const maxStart = Math.max(0, data.length - TREND_VISIBLE_POINTS);
+  const visibleData = data.slice(windowStart, windowStart + TREND_VISIBLE_POINTS);
+  const virtualWidth = viewportWidth > 0 && data.length > TREND_VISIBLE_POINTS
+    ? (viewportWidth / TREND_VISIBLE_POINTS) * data.length
     : viewportWidth;
   const yTicks = useMemo(() => [0, 0.25, 0.5, 0.75, 1].map(ratio => Number((yMax * ratio).toFixed(2))), [yMax]);
 
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport || !pinnedToLatestRef.current) return;
-    requestAnimationFrame(() => {
-      viewport.scrollLeft = viewport.scrollWidth - viewport.clientWidth;
-    });
-  }, [chartWidth, data.length]);
+  const scrollToStart = (start: number) => {
+    const scrollbar = scrollbarRef.current;
+    if (!scrollbar) return;
+    const maxScrollLeft = scrollbar.scrollWidth - scrollbar.clientWidth;
+    if (maxScrollLeft <= 0 || maxStart <= 0) {
+      scrollbar.scrollLeft = 0;
+      return;
+    }
+    scrollbar.scrollLeft = (start / maxStart) * maxScrollLeft;
+  };
 
-  const updatePinnedState = () => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    pinnedToLatestRef.current = viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 8;
+  useEffect(() => {
+    pinnedToLatestRef.current = true;
+    setWindowStart(maxStart);
+    requestAnimationFrame(() => {
+      scrollToStart(maxStart);
+    });
+  }, [scrollKey]);
+
+  useEffect(() => {
+    if (!pinnedToLatestRef.current) {
+      if (windowStart > maxStart) setWindowStart(maxStart);
+      return;
+    }
+    setWindowStart(maxStart);
+    requestAnimationFrame(() => {
+      scrollToStart(maxStart);
+    });
+  }, [data.length, maxStart, windowStart]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      scrollToStart(windowStart);
+    });
+  }, [virtualWidth, viewportWidth, windowStart]);
+
+  const updateFromScroll = () => {
+    const scrollbar = scrollbarRef.current;
+    if (!scrollbar) return;
+    const maxScrollLeft = scrollbar.scrollWidth - scrollbar.clientWidth;
+    if (maxScrollLeft <= 0 || maxStart <= 0) {
+      pinnedToLatestRef.current = true;
+      setWindowStart(0);
+      return;
+    }
+    const nextStart = Math.max(0, Math.min(maxStart, Math.round((scrollbar.scrollLeft / maxScrollLeft) * maxStart)));
+    pinnedToLatestRef.current = scrollbar.scrollLeft >= maxScrollLeft - 8;
+    setWindowStart(nextStart);
   };
 
   return (
-    <div
-      ref={viewportRef}
-      className="h-full overflow-x-auto overflow-y-hidden custom-scrollbar"
-      onScroll={updatePinnedState}
-      onWheel={event => {
-        const viewport = viewportRef.current;
-        if (!viewport || viewport.scrollWidth <= viewport.clientWidth) return;
-        const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-        if (delta === 0) return;
-        event.preventDefault();
-        viewport.scrollLeft += delta;
-        updatePinnedState();
-      }}
-    >
-      <div className="h-full" style={{ width: Math.max(chartWidth, viewportWidth), minWidth: '100%' }}>
+    <div className="h-full flex flex-col gap-2">
+      <div
+        ref={chartRef}
+        className="min-h-0 flex-1"
+        onWheel={event => {
+          const scrollbar = scrollbarRef.current;
+          if (!scrollbar || scrollbar.scrollWidth <= scrollbar.clientWidth) return;
+          const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+          if (delta === 0) return;
+          event.preventDefault();
+          scrollbar.scrollLeft += delta;
+          updateFromScroll();
+        }}
+      >
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
+          <LineChart data={visibleData}>
             <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
             <XAxis dataKey="time" stroke="#64748b" fontSize={10} interval="preserveStartEnd" />
             <YAxis domain={[0, yMax]} ticks={yTicks} allowDataOverflow stroke="#64748b" fontSize={10} />
@@ -419,6 +448,11 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {data.length > TREND_VISIBLE_POINTS && (
+        <div ref={scrollbarRef} className="h-4 overflow-x-auto overflow-y-hidden custom-scrollbar" onScroll={updateFromScroll}>
+          <div style={{ width: Math.max(virtualWidth, viewportWidth), height: 1 }} />
+        </div>
+      )}
     </div>
   );
 }
