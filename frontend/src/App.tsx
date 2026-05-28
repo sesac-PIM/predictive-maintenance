@@ -7,6 +7,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid } from 'recharts';
 
+const TREND_VISIBLE_POINTS = 10;
+const TUBE_TREND_Y_MAX = 0.6;
+
 const STATUS_LEVELS = {
   danger: { label: '위험', color: 'bg-red-500' },
   warning: { label: '주의', color: 'bg-orange-500' },
@@ -341,6 +344,83 @@ function chartDataFromAnomalies(items: ApiAnomaly[]) {
     time: item.measuredAt ? new Date(item.measuredAt).toLocaleTimeString('ko-KR', { hour12: false }) : String(index + 1),
     score: item.anomalyScore,
   }));
+}
+
+type TrendPoint = ReturnType<typeof chartDataFromAnomalies>[number];
+
+function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoint[]; yMax: number; scrollKey: string }) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const pinnedToLatestRef = useRef(true);
+  const [viewportWidth, setViewportWidth] = useState(0);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const observer = new ResizeObserver(entries => {
+      setViewportWidth(entries[0]?.contentRect.width || 0);
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    pinnedToLatestRef.current = true;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = viewport.scrollWidth - viewport.clientWidth;
+    });
+  }, [scrollKey]);
+
+  const visiblePointCount = Math.min(TREND_VISIBLE_POINTS, Math.max(1, data.length));
+  const chartWidth = viewportWidth > 0 && data.length > TREND_VISIBLE_POINTS
+    ? (viewportWidth / visiblePointCount) * data.length
+    : viewportWidth;
+  const yTicks = useMemo(() => [0, 0.25, 0.5, 0.75, 1].map(ratio => Number((yMax * ratio).toFixed(2))), [yMax]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !pinnedToLatestRef.current) return;
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = viewport.scrollWidth - viewport.clientWidth;
+    });
+  }, [chartWidth, data.length]);
+
+  const updatePinnedState = () => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    pinnedToLatestRef.current = viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 8;
+  };
+
+  return (
+    <div
+      ref={viewportRef}
+      className="h-full overflow-x-auto overflow-y-hidden custom-scrollbar"
+      onScroll={updatePinnedState}
+      onWheel={event => {
+        const viewport = viewportRef.current;
+        if (!viewport || viewport.scrollWidth <= viewport.clientWidth) return;
+        const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+        if (delta === 0) return;
+        event.preventDefault();
+        viewport.scrollLeft += delta;
+        updatePinnedState();
+      }}
+    >
+      <div className="h-full" style={{ width: Math.max(chartWidth, viewportWidth), minWidth: '100%' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data}>
+            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+            <XAxis dataKey="time" stroke="#64748b" fontSize={10} interval="preserveStartEnd" />
+            <YAxis domain={[0, yMax]} ticks={yTicks} allowDataOverflow stroke="#64748b" fontSize={10} />
+            <Tooltip contentStyle={{ backgroundColor: '#11171c', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '11px' }} />
+            <Line type="monotone" dataKey="score" stroke="#38bdf8" strokeWidth={2} dot={false} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 }
 
 function percentFromDescription(value?: string) {
@@ -1662,6 +1742,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
   }, [sensorThresholds]);
   const getSensorDisplayName = (tag: string) => sensorDisplayNameMap.get(tag) || tag;
   const trendData = chartDataFromAnomalies(anomalyRows);
+  const trendScrollKey = `${activeMainComp}:${activeEquipment?.equipmentId || 'none'}:${activeGroupKey}`;
   const currentSeverity = normalizeSeverity(latestAnomaly?.anomalyScore, latestAnomaly?.severity);
   const showContribution = currentSeverity !== 'NORMAL';
   const operationState = useMemo(() => {
@@ -1928,15 +2009,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                   {trendData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-xs text-gray-500">이상 수치 데이터가 없습니다.</div>
                   ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={trendData}>
-                        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                        <XAxis dataKey="time" stroke="#64748b" fontSize={10} />
-                        <YAxis domain={[0, 1]} stroke="#64748b" fontSize={10} />
-                        <Tooltip contentStyle={{ backgroundColor: '#11171c', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '11px' }} />
-                        <Line type="monotone" dataKey="score" stroke="#38bdf8" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    <ScrollableAnomalyTrendChart data={trendData} yMax={TUBE_TREND_Y_MAX} scrollKey={trendScrollKey} />
                   )}
                   <div className="absolute right-5 top-5 text-right">
                     <p className="font-data-lg text-4xl font-bold text-[#38bdf8]">{latestAnomaly?.anomalyScore == null ? '-' : latestAnomaly.anomalyScore.toFixed(3)}</p>
@@ -2003,15 +2076,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
                   {trendData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-xs text-gray-500">이상 수치 데이터가 없습니다.</div>
                   ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={trendData}>
-                        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                        <XAxis dataKey="time" stroke="#64748b" fontSize={10} />
-                        <YAxis domain={[0, 1]} stroke="#64748b" fontSize={10} />
-                        <Tooltip contentStyle={{ backgroundColor: '#11171c', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '11px' }} />
-                        <Line type="monotone" dataKey="score" stroke="#38bdf8" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    <ScrollableAnomalyTrendChart data={trendData} yMax={1} scrollKey={trendScrollKey} />
                   )}
                 </div>
               </section>
