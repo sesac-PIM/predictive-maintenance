@@ -339,14 +339,41 @@ function latestSensorRow(rows: ApiSensorRow[]) {
   })[0];
 }
 
+function formatDateDot(value?: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}.${month}.${day}`;
+}
+
 function chartDataFromAnomalies(items: ApiAnomaly[]) {
   return [...items].reverse().map((item, index) => ({
+    date: formatDateDot(item.measuredAt) || '-',
     time: item.measuredAt ? new Date(item.measuredAt).toLocaleTimeString('ko-KR', { hour12: false }) : String(index + 1),
     score: item.anomalyScore,
   }));
 }
 
 type TrendPoint = ReturnType<typeof chartDataFromAnomalies>[number];
+
+function AnomalyTrendTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: TrendPoint; value?: number | string }> }) {
+  if (!active || !payload?.length) return null;
+
+  const point = payload[0]?.payload;
+  const rawScore = typeof point?.score === 'number' ? point.score : Number(payload[0]?.value);
+  const score = Number.isFinite(rawScore) ? rawScore : undefined;
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-[#11171c] px-3 py-2 text-[11px] shadow-xl">
+      <p className="text-white">{point?.date || '-'}</p>
+      <p className="text-white">{point?.time || '-'}</p>
+      <p className="text-[#38bdf8]">score : {score == null ? '-' : score}</p>
+    </div>
+  );
+}
 
 function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoint[]; yMax: number; scrollKey: string }) {
   const chartRef = useRef<HTMLDivElement | null>(null);
@@ -443,7 +470,7 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
             <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
             <XAxis dataKey="time" stroke="#64748b" fontSize={10} interval={0} />
             <YAxis domain={[0, yMax]} ticks={yTicks} allowDataOverflow stroke="#64748b" fontSize={10} />
-            <Tooltip contentStyle={{ backgroundColor: '#11171c', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '11px' }} />
+            <Tooltip content={<AnomalyTrendTooltip />} />
             <Line type="monotone" dataKey="score" stroke="#38bdf8" strokeWidth={2} dot={false} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
