@@ -22,7 +22,7 @@ MAX_WINDOWS_PER_RUN = max(0, int(os.getenv("TUBE_MAX_WINDOWS_PER_RUN", "0")))
 DATA_PATH = Path(
     os.getenv(
         "TUBE_DATA_PATH",
-        PROJECT_ROOT / "ai" / "data" / "tube" / "0528_cut.csv",
+        PROJECT_ROOT / "ai" / "data" / "tube" / "tube.csv",
     )
 ).resolve()
 MODEL_PATH = Path(
