@@ -19,7 +19,7 @@ DB_CONFIG = {
 }
 
 MOTOR_DATA_PATH = Path(
-    env("MOTOR_DATA_PATH", str(AI_DIR / "data" / "motor" / "simulation_stream_15.csv"))
+    env("MOTOR_DATA_PATH", str(AI_DIR / "data" / "motor" / "simulation_25_12_30.csv"))
 )
 MOTOR_MODEL_DIR = Path(env("MOTOR_MODEL_DIR", str(AI_DIR / "models" / "motor")))
 
