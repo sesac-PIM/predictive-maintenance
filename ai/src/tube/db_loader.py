@@ -38,12 +38,27 @@ def _convert_time(series):
 
 
 def _load_dataset():
-    print(f"Reading Excel: {DATA_PATH}")
+    print(f"Reading TUBE data: {DATA_PATH}")
     if not DATA_PATH.exists():
         raise FileNotFoundError(
             f"TUBE data file not found: {DATA_PATH}. "
             "Place the dataset in ai/data/tube or set TUBE_DATA_PATH."
         )
+
+    if DATA_PATH.suffix.lower() == ".csv":
+        df = pd.read_csv(DATA_PATH)
+        missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required TUBE columns: {missing}")
+
+        df = df[REQUIRED_COLUMNS].copy()
+        df["time"] = _convert_time(df["time"])
+        df = df.dropna(subset=REQUIRED_COLUMNS).sort_values("time").reset_index(drop=True)
+        print("Using CSV as monitoring data.")
+        print(f"Rows to insert into DB: {len(df)}")
+        if len(df) > 0:
+            print(f"Monitoring range: {df['time'].min()} ~ {df['time'].max()}")
+        return df
 
     workbook = pd.ExcelFile(DATA_PATH)
     normal_sheet = _pick_sheet(workbook.sheet_names, NORMAL_SHEET_CANDIDATES)
