@@ -68,6 +68,7 @@ type ApiAlert = {
   anomalyResultId?: number;
   anomalyResultType?: string;
   occurredAt?: string;
+  createdAt?: string;
   severity?: string;
   message?: string;
   channel?: string;
@@ -268,6 +269,19 @@ function formatApiTime(value?: string) {
   return date.toLocaleString('ko-KR', { hour12: false });
 }
 
+function formatCompactApiTime(value?: string) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}.${month}.${day} ${hours}:${minutes}:${seconds}`;
+}
+
 function hasBrokenText(value?: string) {
   if (!value) return false;
   return value.includes('�') || /\?{2,}/.test(value);
@@ -285,10 +299,10 @@ function alertTargetKey(alert: Pick<ApiAlert, 'equipmentId' | 'anomalyResultId' 
 }
 
 function alertSendTitle(alert: ApiAlert) {
-  const channel = alert.channel || 'Slack';
-  if (alert.sendStatus === 'SUCCESS') return `${channel} send success`;
-  if (alert.sendStatus === 'FAILED') return `${channel} send failed`;
-  return `${channel} send pending`;
+  const channel = (alert.channel || 'Slack').toLowerCase() === 'slack' ? 'Slack' : alert.channel || 'Slack';
+  if (alert.sendStatus === 'SUCCESS') return `${channel} 알림 전송 완료`;
+  if (alert.sendStatus === 'FAILED') return `${channel} 알림 전송 실패`;
+  return `${channel} 알림 전송 대기`;
 }
 
 function scoreFromAlertMessage(message?: string) {
@@ -1534,13 +1548,13 @@ const HeaderActions = () => {
   const realtimeTick = useRealtimeTick();
 
   useEffect(() => {
-    apiRequest<ApiAlert[]>(`/api/alerts?limit=${ALERT_DROPDOWN_LIMIT}`)
+    apiRequest<ApiAlert[]>(`/api/alerts?limit=${ALERT_DROPDOWN_LIMIT}&sort=createdAt`)
       .then(list => setAlerts(list.slice(0, 5).map((alert, index) => ({
         id: alert.alertId || index + 1,
         type: normalizeSeverity(undefined, alert.severity || 'NORMAL'),
         title: alertSendTitle(alert),
         desc: readableAlertMessage(alert),
-        time: formatApiTime(alert.occurredAt).split(' ').slice(-1)[0] || '',
+        time: formatCompactApiTime(alert.createdAt || alert.occurredAt),
       }))))
       .catch(() => undefined);
   }, [realtimeTick]);

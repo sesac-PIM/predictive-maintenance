@@ -19,6 +19,7 @@ public class AlertResponse {
     private String message;
     private String channel;
     private String sendStatus;
+    private LocalDateTime createdAt;
 
     public static AlertResponse from(AlertHistory alert) {
         return AlertResponse.builder()
@@ -31,6 +32,7 @@ public class AlertResponse {
                 .message(alert.getMessage())
                 .channel(alert.getChannel())
                 .sendStatus(alert.getSendStatus())
+                .createdAt(alert.getCreatedAt())
                 .build();
     }
 }
