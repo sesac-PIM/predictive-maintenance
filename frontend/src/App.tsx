@@ -330,7 +330,11 @@ function readableAlertMessage(alert: ApiAlert, part?: string) {
 }
 
 function alertTargetKey(alert: Pick<ApiAlert, 'equipmentId' | 'anomalyResultId' | 'anomalyResultType'>) {
-  return `${alert.anomalyResultType || 'UNKNOWN'}:${alert.equipmentId || 'unknown'}:${alert.anomalyResultId || 'unknown'}`;
+  return `${(alert.anomalyResultType || 'UNKNOWN').toUpperCase()}:${alert.equipmentId || 'unknown'}:${alert.anomalyResultId || 'unknown'}`;
+}
+
+function anomalyTargetKey(equipment: ApiEquipment, anomaly: ApiAnomaly) {
+  return `${(equipment.equipmentType || anomaly.equipmentType || 'UNKNOWN').toUpperCase()}:${equipment.equipmentId}:${anomaly.anomalyResultId}`;
 }
 
 function alertSendTitle(alert: ApiAlert) {
@@ -1114,8 +1118,8 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   const [plants, setPlants] = useState<UiPlant[]>([]);
   const [equipments, setEquipments] = useState<ApiEquipment[]>([]);
   const [latestAnomalies, setLatestAnomalies] = useState<Record<number, ApiAnomaly | undefined>>({});
+  const [anomalyLogsByEquipment, setAnomalyLogsByEquipment] = useState<Record<number, ApiAnomaly[]>>({});
   const [contributionsByAnomaly, setContributionsByAnomaly] = useState<Record<string, ApiContribution[]>>({});
-  const [alertAnomaliesByTarget, setAlertAnomaliesByTarget] = useState<Record<string, ApiAnomaly | undefined>>({});
   const [alertLogs, setAlertLogs] = useState<ApiAlert[]>([]);
   const realtimeTick = useRealtimeTick();
 
@@ -1169,8 +1173,13 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
 
     Promise.all(equipments.map(async equipment => {
       try {
-        const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${equipment.equipmentId}/anomalies?limit=${SUMMARY_ANOMALY_LIMIT}`);
-        return { equipmentId: equipment.equipmentId, anomaly: latestAnomalySnapshot(anomalies), ok: true } as const;
+        const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${equipment.equipmentId}/anomalies?limit=${ALERT_LIST_LIMIT}`);
+        return {
+          equipmentId: equipment.equipmentId,
+          anomalies,
+          anomaly: latestAnomalySnapshot(anomalies.slice(0, SUMMARY_ANOMALY_LIMIT)),
+          ok: true,
+        } as const;
       } catch {
         return { equipmentId: equipment.equipmentId, ok: false } as const;
       }
@@ -1188,6 +1197,14 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         });
         return next;
       });
+      setAnomalyLogsByEquipment(previous => {
+        const next = { ...previous };
+        entries.forEach(entry => {
+          if (!entry.ok) return;
+          next[entry.equipmentId] = sortAnomaliesDesc(entry.anomalies);
+        });
+        return next;
+      });
     });
 
     return () => {
@@ -1196,48 +1213,52 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   }, [equipments, realtimeTick]);
 
   useEffect(() => {
-    if (alertLogs.length === 0) {
+    if (equipments.length === 0) {
       setContributionsByAnomaly({});
-      setAlertAnomaliesByTarget({});
       return;
     }
 
-    const equipmentIds = new Set(equipments.map(equipment => equipment.equipmentId));
-    const uniqueTargets = alertLogs
-      .filter((alert): alert is ApiAlert & { equipmentId: number; anomalyResultId: number } => Boolean(alert.equipmentId && alert.anomalyResultId))
-      .filter(alert => equipmentIds.has(alert.equipmentId))
-      .filter((alert, index, list) => list.findIndex(item => alertTargetKey(item) === alertTargetKey(alert)) === index);
+    const equipmentById = new Map<number, ApiEquipment>(equipments.map(equipment => [equipment.equipmentId, equipment]));
+    const uniqueTargets = Object.entries(anomalyLogsByEquipment)
+      .flatMap(([equipmentId, anomalies]) => {
+        const equipment = equipmentById.get(Number(equipmentId));
+        if (!equipment) return [];
+        return anomalies
+          .filter(anomaly => severityRank(anomaly.severity) > 0)
+          .map(anomaly => ({
+            equipmentId: equipment.equipmentId,
+            anomalyResultId: anomaly.anomalyResultId,
+            measuredAt: anomaly.measuredAt,
+            key: anomalyTargetKey(equipment, anomaly),
+          }));
+      })
+      .sort((a, b) => {
+        const aTime = a.measuredAt ? new Date(a.measuredAt).getTime() : 0;
+        const bTime = b.measuredAt ? new Date(b.measuredAt).getTime() : 0;
+        return bTime - aTime;
+      })
+      .filter((target, index, list) => list.findIndex(item => item.key === target.key) === index)
+      .slice(0, ALERT_LIST_LIMIT);
 
     if (uniqueTargets.length === 0) {
       setContributionsByAnomaly({});
-      setAlertAnomaliesByTarget({});
       return;
     }
 
-    Promise.all(uniqueTargets.map(async alert => {
-      const key = alertTargetKey(alert);
+    Promise.all(uniqueTargets.map(async target => {
       let contributions: ApiContribution[] = [];
-      let anomaly: ApiAnomaly | undefined;
 
       try {
-        contributions = await apiRequest<ApiContribution[]>(`/api/equipments/${alert.equipmentId}/anomalies/${alert.anomalyResultId}/contributions`);
+        contributions = await apiRequest<ApiContribution[]>(`/api/equipments/${target.equipmentId}/anomalies/${target.anomalyResultId}/contributions`);
       } catch (error) {
         console.error(error);
       }
 
-      try {
-        const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${alert.equipmentId}/anomalies?limit=${ALERT_LIST_LIMIT}`);
-        anomaly = anomalies.find(item => item.anomalyResultId === alert.anomalyResultId);
-      } catch (error) {
-        console.error(error);
-      }
-
-      return [key, contributions, anomaly] as const;
+      return [target.key, contributions] as const;
     })).then(entries => {
       setContributionsByAnomaly(Object.fromEntries(entries.map(([key, contributions]) => [key, contributions])));
-      setAlertAnomaliesByTarget(Object.fromEntries(entries.map(([key, , anomaly]) => [key, anomaly])));
     });
-  }, [alertLogs, equipments]);
+  }, [anomalyLogsByEquipment, equipments]);
 
   const unitCount = useMemo(() => {
     const unitNos = equipments.map(e => e.unitNo).filter((n): n is number => typeof n === 'number');
@@ -1277,31 +1298,68 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   }), [unitCount, equipments, latestAnomalies]);
 
   const derivedLogs = useMemo(() => {
-    if (alertLogs.length === 0 || equipments.length === 0) return [];
+    if (equipments.length === 0) return [];
+
     const equipmentById = new Map<number, ApiEquipment>(equipments.map(e => [e.equipmentId, e]));
-    return alertLogs.flatMap((alert, index) => {
-      const equipment = equipmentById.get(alert.equipmentId || -1);
-      if (!equipment) return [];
-      const unitNo = equipment?.unitNo || 1;
-      const type = (alert.anomalyResultType || equipment?.equipmentType || '').toUpperCase() === 'MOTOR' ? 'motor' : 'gasifier';
-      const targetKey = alertTargetKey(alert);
-      const score = alertAnomaliesByTarget[targetKey]?.anomalyScore ?? scoreFromAlertMessage(alert.message) ?? latestAnomalies[alert.equipmentId || -1]?.anomalyScore;
-      const part = type === 'motor' ? '고압전동기' : '가스화기';
-      return [{
-        id: alert.alertId || index + 1,
-        time: formatApiTime(alert.occurredAt),
-        status: severityToStatus(alert.severity || 'NORMAL'),
-        score: score ?? 0,
-        unitNo,
-        location: `${plant.name} ${unitNo}호기`,
-        type,
-        part,
-        message: readableAlertMessage(alert, part),
-        contributions: alert.anomalyResultId ? (contributionsByAnomaly[targetKey] || []) : [],
-        alerts: [{ ...alert, message: readableAlertMessage(alert, part) }],
-      }];
+    const alertsByTarget = new Map<string, ApiAlert[]>();
+
+    alertLogs.forEach(alert => {
+      if (!alert.equipmentId || !alert.anomalyResultId) return;
+      const key = alertTargetKey(alert);
+      alertsByTarget.set(key, [...(alertsByTarget.get(key) || []), alert]);
     });
-  }, [alertLogs, equipments, plant.name, contributionsByAnomaly, alertAnomaliesByTarget, latestAnomalies]);
+
+    return Object.entries(anomalyLogsByEquipment)
+      .flatMap(([equipmentId, anomalies]) => {
+        const equipment = equipmentById.get(Number(equipmentId));
+        if (!equipment) return [];
+
+        const unitNo = equipment.unitNo || 1;
+        const type = (equipment.equipmentType || '').toUpperCase() === 'MOTOR' ? 'motor' : 'gasifier';
+
+        return anomalies
+          .filter(anomaly => severityRank(anomaly.severity) > 0)
+          .map(anomaly => {
+            const targetKey = anomalyTargetKey(equipment, anomaly);
+            const part = type === 'motor' ? (anomaly.componentName || '고압전동기').replace(/_/g, ' ') : '가스화기';
+            const severity = severityFromEquipmentScore(
+              anomaly.anomalyScore,
+              equipment.equipmentType,
+              anomaly.severity,
+            );
+            const status = severityToStatus(severity);
+            const statusLabel = (STATUS_LEVELS as any)[status]?.label || '';
+            const alerts = (alertsByTarget.get(targetKey) || []).map(alert => ({
+              ...alert,
+              message: readableAlertMessage(alert, part),
+            }));
+
+            return {
+              id: targetKey,
+              equipmentId: equipment.equipmentId,
+              anomalyResultId: anomaly.anomalyResultId,
+              time: formatApiTime(anomaly.measuredAt),
+              measuredAt: anomaly.measuredAt,
+              status,
+              score: anomaly.anomalyScore ?? 0,
+              unitNo,
+              location: `${plant.name} ${unitNo}호기`,
+              type,
+              part,
+              message: anomaly.description || `${part} ${statusLabel} 상태가 감지되었습니다.`,
+              contributions: contributionsByAnomaly[targetKey] || [],
+              alerts,
+            };
+          });
+      })
+      .sort((a, b) => {
+        const aTime = a.measuredAt ? new Date(a.measuredAt).getTime() : 0;
+        const bTime = b.measuredAt ? new Date(b.measuredAt).getTime() : 0;
+        if (bTime !== aTime) return bTime - aTime;
+        return String(b.id).localeCompare(String(a.id));
+      })
+      .slice(0, ALERT_LIST_LIMIT);
+  }, [anomalyLogsByEquipment, alertLogs, equipments, plant.name, contributionsByAnomaly]);
 
   useEffect(() => {
     if (!selectedLog) return;
