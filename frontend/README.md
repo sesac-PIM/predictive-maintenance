@@ -1,20 +1,23 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# KOWEPO-EMS Frontend
 
-# Run and deploy your AI Studio app
+React + Vite 기반의 예지보전 모니터링 대시보드입니다.
 
-This contains everything you need to run your app locally.
+## Local Run
 
-View your app in AI Studio: https://ai.studio/apps/783cebac-5e7f-485f-b19d-42d3b9871f05
+```bash
+npm install
+npm run dev
+```
 
-## Run Locally
+기본 개발 서버 주소는 `http://localhost:3000`입니다.
 
-**Prerequisites:**  Node.js
+## Environment
 
+`frontend/.env` 파일을 생성하고 다음 값을 설정합니다.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```env
+VITE_API_BASE_URL=http://localhost:8080
+VITE_KAKAO_MAP_KEY=your_kakao_javascript_key
+```
+
+배포 환경에서는 `VITE_API_BASE_URL`을 백엔드 서버 주소로 설정합니다.

@@ -34,4 +34,3 @@ frontend/dist/
 frontend/.vite/
 .env
 .env.local
-_codex_frontend_fix_work/
