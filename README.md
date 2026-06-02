@@ -347,18 +347,20 @@ python ai\src\motor\worker.py
 - 로컬 Worker로 EC2 DB에 결과를 적재하려면 `DB_HOST`를 EC2 Public IP로 설정하고 EC2 보안 그룹에서 PostgreSQL 포트 접근을 허용해야 합니다.
 - Kakao Map JavaScript Key는 실제 접속 도메인 또는 `localhost:3000`을 Kakao Developers의 JavaScript SDK 도메인에 등록해야 정상 동작합니다.
 
-## Troubleshooting
+## Implementation Troubleshooting
 
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| GitHub compare 화면에 변경 사항이 없음 | 이미 base 브랜치에 merge된 브랜치 비교 | 최신 코드는 `develop` 또는 `main` 브랜치를 확인 |
-| Spring Boot 8080 포트 충돌 | 기존 백엔드 프로세스가 실행 중 | 기존 프로세스를 종료하거나 `server.port` 변경 |
-| Slack 알림이 전송되지 않음 | `SLACK_WEBHOOK_URL` 미설정 또는 webhook 비활성 | 백엔드 환경 변수 확인 |
-| Kakao Map이 지도 대신 정적 화면처럼 보임 | JavaScript Key 또는 SDK 도메인 설정 문제 | `VITE_KAKAO_MAP_KEY`와 Kakao Developers 도메인 등록 확인 |
-| Python에서 `ModuleNotFoundError: pandas` 발생 | 가상환경 미활성화 또는 패키지 미설치 | `.venv` 활성화 후 `pip install -r ai\requirements.txt` |
-| TensorFlow 설치 실패 | Python 버전 불일치 | Python 3.11 가상환경 사용 |
-| Worker를 재시작하면 어디서부터 도는지 헷갈림 | checkpoint 기반 replay 구조 | `inference_checkpoint`를 확인. 처음부터 재생하려면 결과/기여도/알림/checkpoint 테이블 초기화 |
-| 운영 로그가 특정 설비만 보임 | 최신 결과 limit이 한 타입/한 설비로 쏠림 | type별 조회와 limit 분리 적용 여부 확인 |
+개발 중 실제로 발생한 구조적 문제와 이를 코드에서 해결한 방식을 정리했습니다.
+
+| Area | Symptom | Root Cause | Resolution |
+| --- | --- | --- | --- |
+| Plant summary | 가스화기 점수가 위험 구간인데 발전기 현황 카드의 막대가 정상 색상처럼 표시됨 | 튜브 결과는 2024년 데이터, 모터 결과는 2025년 데이터라 `latest N` 조회를 한 묶음으로 처리하면 최신 시점이 다른 설비 타입이 서로 밀어내는 구조가 됨 | 설비 타입별 최신 결과를 분리해 계산하고, 같은 시점의 후보 중 가장 높은 severity를 대표 상태로 선택 |
+| Operation log | 고압전동기 로그는 보이는데 가스화기 로그가 비어 있거나, 선택한 호기 외 로그가 섞여 보임 | 전체 결과를 먼저 limit으로 자른 뒤 화면에서 필터링하면 특정 설비 타입이나 호기가 limit 밖으로 밀림 | 가스화기와 고압전동기 로그 후보를 타입별로 분리한 뒤 병합/정렬하고, 선택한 plant/unit/type 기준으로 다시 필터링 |
+| Motor component view | MAC A 탭에서 MAC B, BAC 등 다른 부품의 이벤트와 기여도가 함께 표시됨 | 모터 결과가 equipment 기준으로만 조회되고 component 기준 필터가 충분히 적용되지 않음 | Backend anomaly 조회에 component 필터를 반영하고, Frontend도 현재 선택된 motor group의 센서/기여도만 표시하도록 정리 |
+| STOP state handling | 전류가 음수이거나 가동 임계치 이하인데도 정상/이상 점수로 해석됨 | 센서 노이즈와 정지 상태를 AI 이상 점수와 같은 방식으로 처리함 | Python worker에서 정지 구간은 `STOP` 이벤트와 score `0`으로 저장하고, Frontend에서는 전류 표시를 `0` 이상으로 보정하며 STOP 이벤트를 운전 상태 변화에 우선 반영 |
+| Alert processing | 같은 위험 상태가 반복적으로 Slack 알림으로 전송됨 | worker가 매 window마다 결과를 insert하므로 scheduler가 모든 결과를 신규 알림 대상으로 볼 수 있음 | `alert_processed`와 `alert_history`를 사용하고, equipment/type별 이전 severity와 달라질 때만 Slack을 전송 |
+| Replay reset | 시연을 처음부터 다시 보고 싶을 때 원천 데이터까지 지워야 하는지 혼란 | 원천 센서 데이터와 추론 결과/checkpoint의 역할이 분리되어 있음 | source table은 유지하고 `anomaly_result`, `contribution`, `alert_history`, `inference_checkpoint`, `motor_sensor_threshold`만 초기화해 같은 원천 데이터로 재시뮬레이션 |
+| Trend chart scrolling | 결과가 쌓일 때 차트가 최신으로 튀거나, 스크롤 중 그래프가 흔들리고 축이 사라지는 것처럼 보임 | 전체 데이터를 한 번에 렌더링하면서 브라우저 기본 스크롤과 차트 내부 scale 계산이 섞임 | 차트에는 최신 또는 선택 구간의 10개 point만 렌더링하고, 별도 scroll state로 window range를 이동. 사용자가 최신 구간을 보고 있을 때만 새 데이터에 자동 추적 |
+| Realtime update cost | 짧은 polling 주기에서 API 호출이 많아지고 화면이 깜빡임 | 화면 전체를 주기적으로 재조회하면 변경이 없는 데이터까지 계속 다시 그림 | SSE는 데이터 변경 신호만 전달하고, Frontend는 현재 화면에 필요한 API만 refetch하며 이전 데이터를 유지한 채 다음 데이터를 반영 |
 
 ## Reset Inference Results Only
 
