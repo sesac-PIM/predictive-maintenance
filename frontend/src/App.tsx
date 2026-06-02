@@ -474,6 +474,8 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
   const chartRef = useRef<HTMLDivElement | null>(null);
   const scrollbarRef = useRef<HTMLDivElement | null>(null);
   const pinnedToLatestRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
+  const scrollFrameRef = useRef<number | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [windowStart, setWindowStart] = useState(0);
 
@@ -488,8 +490,17 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (scrollFrameRef.current != null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+      }
+    };
+  }, []);
+
   const maxStart = Math.max(0, data.length - TREND_VISIBLE_POINTS);
-  const visibleData = data.slice(windowStart, windowStart + TREND_VISIBLE_POINTS);
+  const safeWindowStart = Math.min(windowStart, maxStart);
+  const visibleData = data.slice(safeWindowStart, safeWindowStart + TREND_VISIBLE_POINTS);
   const virtualWidth = viewportWidth > 0 && data.length > TREND_VISIBLE_POINTS
     ? (viewportWidth / TREND_VISIBLE_POINTS) * data.length
     : viewportWidth;
@@ -500,10 +511,20 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
     if (!scrollbar) return;
     const maxScrollLeft = scrollbar.scrollWidth - scrollbar.clientWidth;
     if (maxScrollLeft <= 0 || maxStart <= 0) {
+      programmaticScrollRef.current = true;
       scrollbar.scrollLeft = 0;
+      requestAnimationFrame(() => {
+        programmaticScrollRef.current = false;
+      });
       return;
     }
-    scrollbar.scrollLeft = (start / maxStart) * maxScrollLeft;
+    const nextScrollLeft = (Math.min(start, maxStart) / maxStart) * maxScrollLeft;
+    if (Math.abs(scrollbar.scrollLeft - nextScrollLeft) < 1) return;
+    programmaticScrollRef.current = true;
+    scrollbar.scrollLeft = nextScrollLeft;
+    requestAnimationFrame(() => {
+      programmaticScrollRef.current = false;
+    });
   };
 
   useEffect(() => {
@@ -516,33 +537,47 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
 
   useEffect(() => {
     if (!pinnedToLatestRef.current) {
-      if (windowStart > maxStart) setWindowStart(maxStart);
+      setWindowStart(previous => Math.min(previous, maxStart));
       return;
     }
     setWindowStart(maxStart);
     requestAnimationFrame(() => {
       scrollToStart(maxStart);
     });
-  }, [data.length, maxStart, windowStart]);
+  }, [data.length, maxStart]);
 
   useEffect(() => {
     requestAnimationFrame(() => {
-      scrollToStart(windowStart);
+      scrollToStart(pinnedToLatestRef.current ? maxStart : safeWindowStart);
     });
-  }, [virtualWidth, viewportWidth, windowStart]);
+  }, [virtualWidth, viewportWidth, maxStart]);
 
   const updateFromScroll = () => {
+    if (programmaticScrollRef.current || scrollFrameRef.current != null) return;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+
+      const scrollbar = scrollbarRef.current;
+      if (!scrollbar) return;
+      const maxScrollLeft = scrollbar.scrollWidth - scrollbar.clientWidth;
+      if (maxScrollLeft <= 0 || maxStart <= 0) {
+        pinnedToLatestRef.current = true;
+        setWindowStart(0);
+        return;
+      }
+      const nextStart = Math.max(0, Math.min(maxStart, Math.round((scrollbar.scrollLeft / maxScrollLeft) * maxStart)));
+      pinnedToLatestRef.current = scrollbar.scrollLeft >= maxScrollLeft - 8;
+      setWindowStart(previous => previous === nextStart ? previous : nextStart);
+    });
+  };
+
+  const handleChartWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     const scrollbar = scrollbarRef.current;
-    if (!scrollbar) return;
-    const maxScrollLeft = scrollbar.scrollWidth - scrollbar.clientWidth;
-    if (maxScrollLeft <= 0 || maxStart <= 0) {
-      pinnedToLatestRef.current = true;
-      setWindowStart(0);
-      return;
-    }
-    const nextStart = Math.max(0, Math.min(maxStart, Math.round((scrollbar.scrollLeft / maxScrollLeft) * maxStart)));
-    pinnedToLatestRef.current = scrollbar.scrollLeft >= maxScrollLeft - 8;
-    setWindowStart(nextStart);
+    if (!scrollbar || scrollbar.scrollWidth <= scrollbar.clientWidth) return;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (delta === 0) return;
+    event.preventDefault();
+    scrollbar.scrollLeft += delta;
   };
 
   return (
@@ -550,15 +585,7 @@ function ScrollableAnomalyTrendChart({ data, yMax, scrollKey }: { data: TrendPoi
       <div
         ref={chartRef}
         className="min-h-0 min-w-0 flex-1"
-        onWheel={event => {
-          const scrollbar = scrollbarRef.current;
-          if (!scrollbar || scrollbar.scrollWidth <= scrollbar.clientWidth) return;
-          const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-          if (delta === 0) return;
-          event.preventDefault();
-          scrollbar.scrollLeft += delta;
-          updateFromScroll();
-        }}
+        onWheel={handleChartWheel}
       >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={visibleData}>
