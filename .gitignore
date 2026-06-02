@@ -22,3 +22,16 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Local development
+.venv/
+__pycache__/
+.idea/
+backend/.gradle/
+backend/build/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+.env
+.env.local
+_codex_frontend_fix_work/
