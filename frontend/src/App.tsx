@@ -115,6 +115,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080
 const KAKAO_MAP_KEY = (import.meta.env.VITE_KAKAO_MAP_KEY || '').replace(/\s+/g, ''); // 카카오맵 JavaScript 키(.env) 자리
 const TUBE_DIAGRAM_SRC = '/tube-diagram.png';
 const REALTIME_UPDATE_EVENT = 'pm:realtime-update';
+const REALTIME_REFRESH_DEBOUNCE_MS = 750;
 const AUTH_LOGOUT_EVENT = 'pm:auth-logout';
 
 function clearStoredToken() {
@@ -147,6 +148,34 @@ function emitRealtimeUpdate() {
 function emitLogout() {
   clearStoredToken();
   window.dispatchEvent(new CustomEvent(AUTH_LOGOUT_EVENT));
+}
+
+function useRealtimeTick(intervalMs = 10_000) {
+  const [realtimeTick, setRealtimeTick] = useState(0);
+  const debounceTimerRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current);
+      }
+      debounceTimerRef.current = window.setTimeout(() => {
+        setRealtimeTick(value => value + 1);
+      }, REALTIME_REFRESH_DEBOUNCE_MS);
+    };
+
+    window.addEventListener(REALTIME_UPDATE_EVENT, refresh);
+    const pollingId = window.setInterval(refresh, intervalMs);
+    return () => {
+      window.removeEventListener(REALTIME_UPDATE_EVENT, refresh);
+      window.clearInterval(pollingId);
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [intervalMs]);
+
+  return realtimeTick;
 }
 
 async function refreshAccessToken() {
@@ -1031,17 +1060,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
   const [contributionsByAnomaly, setContributionsByAnomaly] = useState<Record<string, ApiContribution[]>>({});
   const [alertAnomaliesByTarget, setAlertAnomaliesByTarget] = useState<Record<string, ApiAnomaly | undefined>>({});
   const [alertLogs, setAlertLogs] = useState<ApiAlert[]>([]);
-  const [realtimeTick, setRealtimeTick] = useState(0);
-
-  useEffect(() => {
-    const refresh = () => setRealtimeTick(value => value + 1);
-    window.addEventListener(REALTIME_UPDATE_EVENT, refresh);
-    const pollingId = window.setInterval(refresh, 10_000);
-    return () => {
-      window.removeEventListener(REALTIME_UPDATE_EVENT, refresh);
-      window.clearInterval(pollingId);
-    };
-  }, []);
+  const realtimeTick = useRealtimeTick();
 
   useEffect(() => {
     apiRequest<ApiPlant[]>('/api/plants')
@@ -1059,7 +1078,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         }));
         if (mapped.length > 0) setPlants(mapped);
       })
-      .catch(() => setPlants([]));
+      .catch(() => undefined);
   }, []);
 
   const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '발전본부 데이터 없음', location: '', capacity: '', generationCount: 0, top: 50, left: 50 };
@@ -1067,24 +1086,56 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
 
   useEffect(() => {
     if (!numericPlantId || Number.isNaN(numericPlantId)) return;
-    apiRequest<ApiEquipment[]>(`/api/equipments?plantId=${numericPlantId}`)
-      .then(setEquipments)
-      .catch(() => setEquipments([]));
-    apiRequest<ApiAlert[]>('/api/alerts')
-      .then(setAlertLogs)
-      .catch(() => setAlertLogs([]));
+    let cancelled = false;
+
+    Promise.all([
+      apiRequest<ApiEquipment[]>(`/api/equipments?plantId=${numericPlantId}`),
+      apiRequest<ApiAlert[]>('/api/alerts'),
+    ])
+      .then(([nextEquipments, nextAlertLogs]) => {
+        if (cancelled) return;
+        setEquipments(nextEquipments);
+        setAlertLogs(nextAlertLogs);
+      })
+      .catch(error => {
+        console.error(error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [numericPlantId, realtimeTick]);
 
   useEffect(() => {
     if (equipments.length === 0) return;
+    let cancelled = false;
+
     Promise.all(equipments.map(async equipment => {
       try {
         const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${equipment.equipmentId}/anomalies`);
-        return [equipment.equipmentId, latestAnomalySnapshot(anomalies)] as const;
+        return { equipmentId: equipment.equipmentId, anomaly: latestAnomalySnapshot(anomalies), ok: true } as const;
       } catch {
-        return [equipment.equipmentId, undefined] as const;
+        return { equipmentId: equipment.equipmentId, ok: false } as const;
       }
-    })).then(entries => setLatestAnomalies(Object.fromEntries(entries)));
+    })).then(entries => {
+      if (cancelled) return;
+      setLatestAnomalies(previous => {
+        const next = { ...previous };
+        entries.forEach(entry => {
+          if (!entry.ok) return;
+          if (entry.anomaly) {
+            next[entry.equipmentId] = entry.anomaly;
+          } else {
+            delete next[entry.equipmentId];
+          }
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [equipments, realtimeTick]);
 
   useEffect(() => {
@@ -1475,17 +1526,7 @@ const HeaderActions = () => {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   const [alerts, setAlerts] = useState<Array<{ id: number; type: string; title: string; desc: string; time: string }>>([]);
-  const [realtimeTick, setRealtimeTick] = useState(0);
-
-  useEffect(() => {
-    const refresh = () => setRealtimeTick(value => value + 1);
-    window.addEventListener(REALTIME_UPDATE_EVENT, refresh);
-    const pollingId = window.setInterval(refresh, 10_000);
-    return () => {
-      window.removeEventListener(REALTIME_UPDATE_EVENT, refresh);
-      window.clearInterval(pollingId);
-    };
-  }, []);
+  const realtimeTick = useRealtimeTick();
 
   useEffect(() => {
     apiRequest<ApiAlert[]>('/api/alerts')
@@ -1651,17 +1692,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
   const [contributions, setContributions] = useState<ApiContribution[]>([]);
   const [sensorRows, setSensorRows] = useState<any[]>([]);
   const [sensorThresholds, setSensorThresholds] = useState<ApiThreshold[]>([]);
-  const [realtimeTick, setRealtimeTick] = useState(0);
-
-  useEffect(() => {
-    const refresh = () => setRealtimeTick(value => value + 1);
-    window.addEventListener(REALTIME_UPDATE_EVENT, refresh);
-    const pollingId = window.setInterval(refresh, 10_000);
-    return () => {
-      window.removeEventListener(REALTIME_UPDATE_EVENT, refresh);
-      window.clearInterval(pollingId);
-    };
-  }, []);
+  const realtimeTick = useRealtimeTick();
 
   useEffect(() => {
     apiRequest<ApiPlant[]>('/api/plants')
@@ -1679,7 +1710,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
         }));
         if (mapped.length > 0) setPlants(mapped);
       })
-      .catch(() => setPlants([]));
+      .catch(() => undefined);
   }, []);
 
   const plant = plants.find(p => p.id === plantId) || plants[0] || { id: plantId, name: '발전본부 데이터 없음', location: '', capacity: '', generationCount: 0, top: 50, left: 50 };
@@ -1690,7 +1721,9 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
     if (!numericPlantId || Number.isNaN(numericPlantId)) return;
     apiRequest<ApiEquipment[]>(`/api/equipments?plantId=${numericPlantId}`)
       .then(setEquipments)
-      .catch(() => setEquipments([]));
+      .catch(error => {
+        console.error(error);
+      });
   }, [numericPlantId]);
 
   const motorSensorGroups: Record<string, string[]> = {
@@ -1769,19 +1802,15 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
               ? list.filter(item => activeSensors.includes(item.sensorTag))
               : list;
             if (!cancelled) setContributions(visibleList);
-          } catch {
-            if (!cancelled) setContributions([]);
+          } catch (error) {
+            console.error(error);
           }
         } else {
           setContributions([]);
         }
-      } catch {
+      } catch (error) {
         if (cancelled) return;
-        setLatestAnomaly(null);
-        setAnomalyRows([]);
-        setContributions([]);
-        setSensorRows([]);
-        setSensorThresholds([]);
+        console.error(error);
       }
     };
 
