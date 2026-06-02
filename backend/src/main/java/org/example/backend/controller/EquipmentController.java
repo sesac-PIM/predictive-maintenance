@@ -32,8 +32,11 @@ public class EquipmentController {
     }
 
     @GetMapping("/{equipmentId}/sensor-data")
-    public List<?> getSensorData(@PathVariable Long equipmentId) {
-        return equipmentService.getSensorData(equipmentId);
+    public List<?> getSensorData(
+            @PathVariable Long equipmentId,
+            @RequestParam(required = false) Integer limit
+    ) {
+        return equipmentService.getSensorData(equipmentId, limit);
     }
 
     @GetMapping("/{equipmentId}/sensor-thresholds")
@@ -46,9 +49,10 @@ public class EquipmentController {
     @GetMapping("/{equipmentId}/anomalies")
     public List<?> getAnomalies(
             @PathVariable Long equipmentId,
-            @RequestParam(required = false) String component
+            @RequestParam(required = false) String component,
+            @RequestParam(required = false) Integer limit
     ) {
-        return equipmentService.getAnomalies(equipmentId, component);
+        return equipmentService.getAnomalies(equipmentId, component, limit);
     }
 
     @GetMapping("/{equipmentId}/anomalies/{anomalyResultId}/contributions")
