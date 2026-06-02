@@ -278,6 +278,18 @@ function barClassBySeverity(severity?: string) {
   return 'bg-[#8ed5ff] shadow-[0_0_10px_rgba(142,213,255,0.20)]';
 }
 
+function logScoreTextClass(status?: string) {
+  if (status === 'danger') return 'text-red-500';
+  if (status === 'warning') return 'text-orange-500';
+  return 'text-[#38bdf8]';
+}
+
+function logScoreBarClass(status?: string) {
+  if (status === 'danger') return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]';
+  if (status === 'warning') return 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]';
+  return 'bg-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.25)]';
+}
+
 function severityToStatus(severity: string) {
   const upper = normalizeSeverity(undefined, severity);
   if (upper === 'DANGER') return 'danger';
@@ -622,6 +634,9 @@ const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) =
   const contributions: ApiContribution[] = log.contributions || [];
   const alerts: ApiAlert[] = log.alerts || [];
   const part = log.part || '';
+  const scoreTextClass = logScoreTextClass(log.status);
+  const scoreBarClass = logScoreBarClass(log.status);
+  const scoreBarWidth = Math.max(0, Math.min(100, (log.score ?? 0) * 100));
 
   return (
     <motion.div
@@ -657,7 +672,7 @@ const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) =
             </div>
             <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2">이상징후 지수 (정규화된 이상 지표)</p>
             <div className="flex items-baseline gap-2">
-              <span className={`text-5xl font-data-lg font-bold ${(log.score ?? 0) > 0.9 ? 'text-red-500' : 'text-orange-500'}`}>
+              <span className={`text-5xl font-data-lg font-bold ${scoreTextClass}`}>
                 {(log.score == null ? '-' : log.score.toFixed(3))}
               </span>
               <span className="text-on-surface-variant text-lg">/ 1.000</span>
@@ -665,8 +680,8 @@ const LogAnalysisPanel = ({ log, onClose }: { log: any, onClose: () => void }) =
             <div className="mt-4 w-full h-2 bg-white/5 rounded-full overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: `${log.score * 100}%` }}
-                className={`h-full ${(log.score ?? 0) > 0.9 ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]'}`}
+                animate={{ width: `${scoreBarWidth}%` }}
+                className={`h-full ${scoreBarClass}`}
               />
             </div>
           </div>
@@ -1514,6 +1529,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
                     {derivedLogs.filter(log => log.unitNo === selectedLogUnit && log.type === activeLogSubMenu).length > 0 ? (
                       derivedLogs.filter(log => log.unitNo === selectedLogUnit && log.type === activeLogSubMenu).map(log => {
                         const [, unitName] = log.location.split(' ');
+                        const scoreTextClass = logScoreTextClass(log.status);
                         return (
                           <button 
                             key={log.id} 
@@ -1539,7 +1555,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
 
                               <div className="flex items-baseline gap-2">
                                 <span className="text-[10px] text-gray-600 font-bold uppercase whitespace-nowrap">이상 점수</span>
-                                <span className={`font-data-lg text-3xl font-bold ${(log.score ?? 0) > 0.9 ? 'text-red-500' : 'text-orange-500'}`}>
+                                <span className={`font-data-lg text-3xl font-bold ${scoreTextClass}`}>
                                   {(log.score == null ? '-' : log.score.toFixed(3))}
                                 </span>
                               </div>
