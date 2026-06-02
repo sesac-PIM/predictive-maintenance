@@ -12,6 +12,7 @@ import org.example.backend.global.exception.CustomException;
 import org.example.backend.global.exception.ErrorCode;
 import org.example.backend.global.mapper.SensorNameMapper;
 import org.example.backend.repository.*;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,6 +20,10 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class EquipmentService {
+
+    private static final int DEFAULT_SENSOR_DATA_LIMIT = 300;
+    private static final int DEFAULT_ANOMALY_LIMIT = 300;
+    private static final int MAX_QUERY_LIMIT = 1000;
 
     private final EquipmentRepository equipmentRepository;
     private final MotorSensorDataRepository motorSensorDataRepository;
@@ -66,12 +71,19 @@ public class EquipmentService {
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND));
     }
 
-    public List<?> getSensorData(Long equipmentId) {
+    public List<?> getSensorData(Long equipmentId, Integer limit) {
         Equipment equipment = findEquipment(equipmentId);
+        PageRequest pageRequest = PageRequest.of(
+                0,
+                normalizeLimit(limit, DEFAULT_SENSOR_DATA_LIMIT, MAX_QUERY_LIMIT)
+        );
 
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
             List<MotorSensorData> sensorDataList =
-                    motorSensorDataRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId);
+                    motorSensorDataRepository.findByEquipmentIdOrderByMeasuredAtDesc(
+                            equipmentId,
+                            pageRequest
+                    );
 
             return sensorDataList.stream()
                     .map(MotorSensorDataResponse::from)
@@ -79,7 +91,10 @@ public class EquipmentService {
         }
 
         List<TubeSensorData> sensorDataList =
-                tubeSensorDataRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId);
+                tubeSensorDataRepository.findByEquipmentIdOrderByMeasuredAtDesc(
+                        equipmentId,
+                        pageRequest
+                );
 
         return sensorDataList.stream()
                 .map(TubeSensorDataResponse::from)
@@ -140,16 +155,24 @@ public class EquipmentService {
                 .toList();
     }
 
-    public List<?> getAnomalies(Long equipmentId, String component) {
+    public List<?> getAnomalies(Long equipmentId, String component, Integer limit) {
         Equipment equipment = findEquipment(equipmentId);
+        PageRequest pageRequest = PageRequest.of(
+                0,
+                normalizeLimit(limit, DEFAULT_ANOMALY_LIMIT, MAX_QUERY_LIMIT)
+        );
 
         if (equipment.getEquipmentType() == EquipmentType.MOTOR) {
             String componentName = normalizeMotorComponent(component);
             List<MotorAnomalyResult> results = componentName == null
-                    ? motorAnomalyResultRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId)
+                    ? motorAnomalyResultRepository.findByEquipmentIdOrderByMeasuredAtDesc(
+                            equipmentId,
+                            pageRequest
+                    )
                     : motorAnomalyResultRepository.findByEquipmentIdAndComponentNameOrderByMeasuredAtDesc(
                             equipmentId,
-                            componentName
+                            componentName,
+                            pageRequest
                     );
 
             return results
@@ -176,7 +199,10 @@ public class EquipmentService {
                     .toList();
         }
 
-        return tubeAnomalyResultRepository.findByEquipmentIdOrderByMeasuredAtDesc(equipmentId)
+        return tubeAnomalyResultRepository.findByEquipmentIdOrderByMeasuredAtDesc(
+                        equipmentId,
+                        pageRequest
+                )
                 .stream()
                 .map(result -> {
                     AnomalyConfig config = findConfig(result.getConfigId());
@@ -271,5 +297,13 @@ public class EquipmentService {
         }
 
         return component.trim().toUpperCase().replace('-', '_').replace(' ', '_');
+    }
+
+    private int normalizeLimit(Integer limit, int defaultValue, int maxValue) {
+        if (limit == null || limit <= 0) {
+            return defaultValue;
+        }
+
+        return Math.min(limit, maxValue);
     }
 }

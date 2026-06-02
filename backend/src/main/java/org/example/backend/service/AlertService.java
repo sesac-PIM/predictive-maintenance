@@ -14,6 +14,7 @@ import org.example.backend.repository.AnomalyConfigRepository;
 import org.example.backend.repository.EquipmentRepository;
 import org.example.backend.repository.MotorAnomalyResultRepository;
 import org.example.backend.repository.TubeAnomalyResultRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AlertService {
 
+    private static final int DEFAULT_ALERT_LIMIT = 100;
+    private static final int MAX_ALERT_LIMIT = 500;
+
     private final EquipmentRepository equipmentRepository;
     private final AnomalyConfigRepository anomalyConfigRepository;
     private final MotorAnomalyResultRepository motorAnomalyResultRepository;
@@ -31,29 +35,50 @@ public class AlertService {
     private final AlertHistoryRepository alertHistoryRepository;
     private final SlackWebhookService slackWebhookService;
 
-    public List<AlertResponse> getAlerts(Long equipmentId, String severity, String type) {
+    public List<AlertResponse> getAlerts(Long equipmentId, String severity, String type, Integer limit) {
         String normalizedSeverity = severity == null ? null : severity.toUpperCase();
         String normalizedType = type == null ? null : type.toUpperCase();
+        PageRequest pageRequest = PageRequest.of(
+                0,
+                normalizeLimit(limit, DEFAULT_ALERT_LIMIT, MAX_ALERT_LIMIT)
+        );
 
         List<AlertHistory> alerts;
 
         if (equipmentId != null && normalizedSeverity != null && normalizedType != null) {
             alerts = alertHistoryRepository
-                    .findByEquipmentIdAndSeverityAndAnomalyResultTypeOrderByOccurredAtDesc(equipmentId, normalizedSeverity, normalizedType);
+                    .findByEquipmentIdAndSeverityAndAnomalyResultTypeOrderByOccurredAtDesc(
+                            equipmentId,
+                            normalizedSeverity,
+                            normalizedType,
+                            pageRequest
+                    );
         } else if (equipmentId != null && normalizedSeverity != null) {
-            alerts = alertHistoryRepository.findByEquipmentIdAndSeverityOrderByOccurredAtDesc(equipmentId, normalizedSeverity);
+            alerts = alertHistoryRepository.findByEquipmentIdAndSeverityOrderByOccurredAtDesc(
+                    equipmentId,
+                    normalizedSeverity,
+                    pageRequest
+            );
         } else if (equipmentId != null && normalizedType != null) {
-            alerts = alertHistoryRepository.findByEquipmentIdAndAnomalyResultTypeOrderByOccurredAtDesc(equipmentId, normalizedType);
+            alerts = alertHistoryRepository.findByEquipmentIdAndAnomalyResultTypeOrderByOccurredAtDesc(
+                    equipmentId,
+                    normalizedType,
+                    pageRequest
+            );
         } else if (normalizedSeverity != null && normalizedType != null) {
-            alerts = alertHistoryRepository.findBySeverityAndAnomalyResultTypeOrderByOccurredAtDesc(normalizedSeverity, normalizedType);
+            alerts = alertHistoryRepository.findBySeverityAndAnomalyResultTypeOrderByOccurredAtDesc(
+                    normalizedSeverity,
+                    normalizedType,
+                    pageRequest
+            );
         } else if (equipmentId != null) {
-            alerts = alertHistoryRepository.findByEquipmentIdOrderByOccurredAtDesc(equipmentId);
+            alerts = alertHistoryRepository.findByEquipmentIdOrderByOccurredAtDesc(equipmentId, pageRequest);
         } else if (normalizedSeverity != null) {
-            alerts = alertHistoryRepository.findBySeverityOrderByOccurredAtDesc(normalizedSeverity);
+            alerts = alertHistoryRepository.findBySeverityOrderByOccurredAtDesc(normalizedSeverity, pageRequest);
         } else if (normalizedType != null) {
-            alerts = alertHistoryRepository.findByAnomalyResultTypeOrderByOccurredAtDesc(normalizedType);
+            alerts = alertHistoryRepository.findByAnomalyResultTypeOrderByOccurredAtDesc(normalizedType, pageRequest);
         } else {
-            alerts = alertHistoryRepository.findAllByOrderByOccurredAtDesc();
+            alerts = alertHistoryRepository.findAllByOrderByOccurredAtDesc(pageRequest);
         }
 
         return alerts.stream()
@@ -173,6 +198,14 @@ public class AlertService {
         }
 
         return "NORMAL";
+    }
+
+    private int normalizeLimit(Integer limit, int defaultValue, int maxValue) {
+        if (limit == null || limit <= 0) {
+            return defaultValue;
+        }
+
+        return Math.min(limit, maxValue);
     }
 
     private String createMessage(

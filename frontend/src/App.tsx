@@ -9,6 +9,11 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineCh
 
 const TREND_VISIBLE_POINTS = 10;
 const TUBE_TREND_Y_MAX = 0.6;
+const SUMMARY_ANOMALY_LIMIT = 1;
+const DETAIL_ANOMALY_LIMIT = 300;
+const SENSOR_DATA_LIMIT = 300;
+const ALERT_LIST_LIMIT = 100;
+const ALERT_DROPDOWN_LIMIT = 5;
 
 const STATUS_LEVELS = {
   danger: { label: '위험', color: 'bg-red-500' },
@@ -1090,7 +1095,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
 
     Promise.all([
       apiRequest<ApiEquipment[]>(`/api/equipments?plantId=${numericPlantId}`),
-      apiRequest<ApiAlert[]>('/api/alerts'),
+      apiRequest<ApiAlert[]>(`/api/alerts?limit=${ALERT_LIST_LIMIT}`),
     ])
       .then(([nextEquipments, nextAlertLogs]) => {
         if (cancelled) return;
@@ -1112,7 +1117,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
 
     Promise.all(equipments.map(async equipment => {
       try {
-        const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${equipment.equipmentId}/anomalies`);
+        const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${equipment.equipmentId}/anomalies?limit=${SUMMARY_ANOMALY_LIMIT}`);
         return { equipmentId: equipment.equipmentId, anomaly: latestAnomalySnapshot(anomalies), ok: true } as const;
       } catch {
         return { equipmentId: equipment.equipmentId, ok: false } as const;
@@ -1169,7 +1174,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       }
 
       try {
-        const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${alert.equipmentId}/anomalies`);
+        const anomalies = await apiRequest<ApiAnomaly[]>(`/api/equipments/${alert.equipmentId}/anomalies?limit=${ALERT_LIST_LIMIT}`);
         anomaly = anomalies.find(item => item.anomalyResultId === alert.anomalyResultId);
       } catch (error) {
         console.error(error);
@@ -1529,7 +1534,7 @@ const HeaderActions = () => {
   const realtimeTick = useRealtimeTick();
 
   useEffect(() => {
-    apiRequest<ApiAlert[]>('/api/alerts')
+    apiRequest<ApiAlert[]>(`/api/alerts?limit=${ALERT_DROPDOWN_LIMIT}`)
       .then(list => setAlerts(list.slice(0, 5).map((alert, index) => ({
         id: alert.alertId || index + 1,
         type: normalizeSeverity(undefined, alert.severity || 'NORMAL'),
@@ -1778,12 +1783,13 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
     let cancelled = false;
     const loadEquipmentData = async () => {
       try {
+        const anomalyLimitQuery = `limit=${DETAIL_ANOMALY_LIMIT}`;
         const anomalyPath = activeMotorComponentName
-          ? `/api/equipments/${activeEquipment.equipmentId}/anomalies?component=${encodeURIComponent(activeMotorComponentName)}`
-          : `/api/equipments/${activeEquipment.equipmentId}/anomalies`;
+          ? `/api/equipments/${activeEquipment.equipmentId}/anomalies?component=${encodeURIComponent(activeMotorComponentName)}&${anomalyLimitQuery}`
+          : `/api/equipments/${activeEquipment.equipmentId}/anomalies?${anomalyLimitQuery}`;
         const [anomalies, sensors, thresholds] = await Promise.all([
           apiRequest<ApiAnomaly[]>(anomalyPath),
-          apiRequest<ApiSensorRow[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-data`),
+          apiRequest<ApiSensorRow[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-data?limit=${SENSOR_DATA_LIMIT}`),
           apiRequest<ApiThreshold[]>(`/api/equipments/${activeEquipment.equipmentId}/sensor-thresholds`),
         ]);
         if (cancelled) return;
