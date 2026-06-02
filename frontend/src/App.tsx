@@ -1231,6 +1231,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       .flatMap(([equipmentId, anomalies]) => {
         const equipment = equipmentById.get(Number(equipmentId));
         if (!equipment) return [];
+        const type = (equipment.equipmentType || '').toUpperCase() === 'MOTOR' ? 'motor' : 'gasifier';
         return anomalies
           .filter(anomaly => severityRank(anomalySeverityForEquipment(anomaly, equipment.equipmentType)) > 0)
           .map(anomaly => ({
@@ -1238,6 +1239,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
             anomalyResultId: anomaly.anomalyResultId,
             measuredAt: anomaly.measuredAt,
             key: anomalyTargetKey(equipment, anomaly),
+            type,
           }));
       })
       .sort((a, b) => {
@@ -1245,15 +1247,19 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         const bTime = b.measuredAt ? new Date(b.measuredAt).getTime() : 0;
         return bTime - aTime;
       })
-      .filter((target, index, list) => list.findIndex(item => item.key === target.key) === index)
-      .slice(0, ALERT_LIST_LIMIT);
+      .filter((target, index, list) => list.findIndex(item => item.key === target.key) === index);
 
-    if (uniqueTargets.length === 0) {
+    const contributionTargets = [
+      ...uniqueTargets.filter(target => target.type === 'gasifier').slice(0, ALERT_LIST_LIMIT),
+      ...uniqueTargets.filter(target => target.type === 'motor').slice(0, ALERT_LIST_LIMIT),
+    ];
+
+    if (contributionTargets.length === 0) {
       setContributionsByAnomaly({});
       return;
     }
 
-    Promise.all(uniqueTargets.map(async target => {
+    Promise.all(contributionTargets.map(async target => {
       let contributions: ApiContribution[] = [];
 
       try {
@@ -1323,7 +1329,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       alertsByTarget.set(key, [...(alertsByTarget.get(key) || []), alert]);
     });
 
-    return Object.entries(anomalyLogsByEquipment)
+    const logs = Object.entries(anomalyLogsByEquipment)
       .flatMap(([equipmentId, anomalies]) => {
         const equipment = equipmentById.get(Number(equipmentId));
         if (!equipment) return [];
@@ -1367,8 +1373,17 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         const bTime = b.measuredAt ? new Date(b.measuredAt).getTime() : 0;
         if (bTime !== aTime) return bTime - aTime;
         return String(b.id).localeCompare(String(a.id));
-      })
-      .slice(0, ALERT_LIST_LIMIT);
+      });
+
+    return [
+      ...logs.filter(log => log.type === 'gasifier').slice(0, ALERT_LIST_LIMIT),
+      ...logs.filter(log => log.type === 'motor').slice(0, ALERT_LIST_LIMIT),
+    ].sort((a, b) => {
+      const aTime = a.measuredAt ? new Date(a.measuredAt).getTime() : 0;
+      const bTime = b.measuredAt ? new Date(b.measuredAt).getTime() : 0;
+      if (bTime !== aTime) return bTime - aTime;
+      return String(b.id).localeCompare(String(a.id));
+    });
   }, [anomalyLogsByEquipment, alertLogs, equipments, plant.name, contributionsByAnomaly]);
 
   useEffect(() => {
