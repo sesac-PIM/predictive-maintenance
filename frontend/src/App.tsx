@@ -255,6 +255,29 @@ function normalizeSeverity(score?: number, severity?: string) {
   return 'NORMAL';
 }
 
+const EQUIPMENT_SCORE_THRESHOLDS = {
+  TUBE: { warning: 0.3, danger: 0.4 },
+  MOTOR: { warning: 0.7, danger: 0.9 },
+} as const;
+
+function severityFromEquipmentScore(score?: number, equipmentType?: string, severity?: string) {
+  if (severity) return severity.toUpperCase();
+  if (score == null) return 'NORMAL';
+
+  const type = (equipmentType || '').toUpperCase();
+  const thresholds = type === 'TUBE' ? EQUIPMENT_SCORE_THRESHOLDS.TUBE : EQUIPMENT_SCORE_THRESHOLDS.MOTOR;
+  if (score >= thresholds.danger) return 'DANGER';
+  if (score >= thresholds.warning) return 'WARNING';
+  return 'NORMAL';
+}
+
+function barClassBySeverity(severity?: string) {
+  const upper = normalizeSeverity(undefined, severity || 'NORMAL');
+  if (upper === 'DANGER') return 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.35)]';
+  if (upper === 'WARNING') return 'bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.25)]';
+  return 'bg-[#8ed5ff] shadow-[0_0_10px_rgba(142,213,255,0.20)]';
+}
+
 function severityToStatus(severity: string) {
   const upper = normalizeSeverity(undefined, severity);
   if (upper === 'DANGER') return 'danger';
@@ -1215,11 +1238,13 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
     const motorAnomaly = motorEquipment ? latestAnomalies[motorEquipment.equipmentId] : undefined;
     const gasifierScore = gasifierAnomaly?.anomalyScore;
     const motorScore = motorAnomaly?.anomalyScore;
+    const gasifierSeverity = severityFromEquipmentScore(gasifierScore, 'TUBE', gasifierAnomaly?.severity || gasifierEquipment?.status);
+    const motorSeverity = severityFromEquipmentScore(motorScore, 'MOTOR', motorAnomaly?.severity || motorEquipment?.status);
     const scores = [gasifierScore, motorScore].filter((n): n is number => typeof n === 'number');
     const score = scores.length ? Math.max(...scores) : undefined;
     const severity = pickHighestSeverity([
-      gasifierAnomaly ? normalizeSeverity(gasifierScore, gasifierAnomaly.severity) : normalizeSeverity(undefined, gasifierEquipment?.status),
-      motorAnomaly ? normalizeSeverity(motorScore, motorAnomaly.severity) : normalizeSeverity(undefined, motorEquipment?.status),
+      gasifierSeverity,
+      motorSeverity,
       normalizeSeverity(score),
     ]);
     return {
@@ -1231,6 +1256,8 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
       motorEquipment,
       gasifierScore,
       motorScore,
+      gasifierSeverity,
+      motorSeverity,
     };
   }), [unitCount, equipments, latestAnomalies]);
 
@@ -1413,7 +1440,6 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
                     const overallSeverity = normalizeSeverity(maxScore, gen.severity);
                     const statusLabel = overallSeverity === 'DANGER' ? '위험' : overallSeverity === 'WARNING' ? '주의' : overallSeverity === 'STOP' ? '정지' : '정상';
                     const statusClass = overallSeverity === 'DANGER' ? 'text-red-300' : overallSeverity === 'WARNING' ? 'text-yellow-300' : overallSeverity === 'STOP' ? 'text-gray-400' : 'text-[#8ed5ff]';
-                    const barClass = (score: number) => score >= 0.9 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.35)]' : score >= 0.7 ? 'bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.25)]' : 'bg-[#8ed5ff] shadow-[0_0_10px_rgba(142,213,255,0.20)]';
                     return (
                       <div key={gen.id} className="asset-card glass-panel rounded-[22px] p-7 border border-white/[0.07] bg-[#11171c]/80 flex flex-col gap-7 hover:border-[#38bdf8]/20 transition-all">
                         <div className="flex justify-between items-start">
@@ -1427,7 +1453,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
                             <span className="text-xs font-mono text-gray-400">{gasifierScore == null ? '-' : gasifierScore.toFixed(3)}</span>
                           </div>
                           <div className="h-3 rounded-full bg-white/[0.05] overflow-hidden border border-white/[0.04] group-hover/score:border-[#38bdf8]/30 transition-colors">
-                            <div className={`h-full rounded-full ${barClass(gasifierScore ?? 0)}`} style={{ width: `${(gasifierScore ?? 0) * 100}%` }}></div>
+                            <div className={`h-full rounded-full ${barClassBySeverity(gen.gasifierSeverity)}`} style={{ width: `${(gasifierScore ?? 0) * 100}%` }}></div>
                           </div>
                         </button>
 
@@ -1437,7 +1463,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
                             <span className="text-xs font-mono text-gray-400">{motorScore == null ? '-' : motorScore.toFixed(3)}</span>
                           </div>
                           <div className="h-3 rounded-full bg-white/[0.05] overflow-hidden border border-white/[0.04] group-hover/score:border-[#38bdf8]/30 transition-colors">
-                            <div className={`h-full rounded-full ${barClass(motorScore ?? 0)}`} style={{ width: `${(motorScore ?? 0) * 100}%` }}></div>
+                            <div className={`h-full rounded-full ${barClassBySeverity(gen.motorSeverity)}`} style={{ width: `${(motorScore ?? 0) * 100}%` }}></div>
                           </div>
                         </button>
                       </div>
