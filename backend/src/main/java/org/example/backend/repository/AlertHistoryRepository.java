@@ -13,6 +13,8 @@ public interface AlertHistoryRepository extends JpaRepository<AlertHistory, Long
 
     List<AlertHistory> findAllByOrderByOccurredAtDesc(Pageable pageable);
 
+    List<AlertHistory> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
     List<AlertHistory> findBySeverityOrderByOccurredAtDesc(String severity);
 
     List<AlertHistory> findBySeverityOrderByOccurredAtDesc(

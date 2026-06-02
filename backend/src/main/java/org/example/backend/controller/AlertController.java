@@ -42,8 +42,9 @@ public class AlertController {
             @RequestParam(required = false) Long equipmentId,
             @RequestParam(required = false) String severity,
             @RequestParam(required = false) String type,
-            @RequestParam(required = false) Integer limit
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String sort
     ) {
-        return alertService.getAlerts(equipmentId, severity, type, limit);
+        return alertService.getAlerts(equipmentId, severity, type, limit, sort);
     }
 }

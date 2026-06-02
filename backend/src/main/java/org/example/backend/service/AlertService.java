@@ -35,9 +35,10 @@ public class AlertService {
     private final AlertHistoryRepository alertHistoryRepository;
     private final SlackWebhookService slackWebhookService;
 
-    public List<AlertResponse> getAlerts(Long equipmentId, String severity, String type, Integer limit) {
+    public List<AlertResponse> getAlerts(Long equipmentId, String severity, String type, Integer limit, String sort) {
         String normalizedSeverity = severity == null ? null : severity.toUpperCase();
         String normalizedType = type == null ? null : type.toUpperCase();
+        boolean sortByCreatedAt = "createdAt".equalsIgnoreCase(sort);
         PageRequest pageRequest = PageRequest.of(
                 0,
                 normalizeLimit(limit, DEFAULT_ALERT_LIMIT, MAX_ALERT_LIMIT)
@@ -78,7 +79,9 @@ public class AlertService {
         } else if (normalizedType != null) {
             alerts = alertHistoryRepository.findByAnomalyResultTypeOrderByOccurredAtDesc(normalizedType, pageRequest);
         } else {
-            alerts = alertHistoryRepository.findAllByOrderByOccurredAtDesc(pageRequest);
+            alerts = sortByCreatedAt
+                    ? alertHistoryRepository.findAllByOrderByCreatedAtDesc(pageRequest)
+                    : alertHistoryRepository.findAllByOrderByOccurredAtDesc(pageRequest);
         }
 
         return alerts.stream()
