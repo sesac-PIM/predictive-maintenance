@@ -26,6 +26,11 @@ replay_pid*
 # Local development
 .venv/
 __pycache__/
+.idea/
+backend/.gradle/
+backend/build/
+frontend/node_modules/
+frontend/dist/
 frontend/.vite/
 .env
 .env.local
