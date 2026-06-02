@@ -1,54 +1,107 @@
 # Database Guide
 
-## 1. Database
+KOWEPO-EMS uses PostgreSQL as the single source of truth for plant metadata, raw sensor streams, AI inference results, contribution data, checkpoint state, and alert history.
 
-본 프로젝트는 PostgreSQL을 사용한다.
+## Local Database
 
-- DB: predictive_maintenance
-- User: postgres
-- Password: 1234
-- Port: 5432
-- Docker Container: my_postgres
+Default connection:
 
----
+| Item | Value |
+| --- | --- |
+| Database | `predictive_maintenance` |
+| User | `postgres` |
+| Password | `1234` |
+| Port | `5432` |
+| Container | `my_postgres` |
 
-## 2. Docker 실행
+Start PostgreSQL:
 
-docker compose up -d
+```bash
+docker compose up -d postgres
+```
 
----
+Connect with `psql`:
 
-## 3. PostgreSQL 접속
-
+```bash
 docker exec -it my_postgres psql -U postgres -d predictive_maintenance
+```
 
----
+The schema and seed data are defined in [init.sql](../init.sql). If the Docker volume already exists, `init.sql` will not be re-run automatically. Recreate the DB only when you intentionally want a clean database.
 
-## 4. 테이블 확인
+## Core Tables
 
-\dt
+| Table | Purpose |
+| --- | --- |
+| `plant` | Power plant metadata shown on the plant status map/list. |
+| `equipment` | Generator/tube/motor equipment metadata by plant and unit. |
+| `tube_sensor_data` | Raw gasifier tube sensor readings. |
+| `motor_sensor_data` | Raw high-voltage motor sensor readings. |
+| `tube_sensor_threshold` | Dynamic or configured tube sensor thresholds. |
+| `motor_sensor_threshold` | Window-level dynamic motor sensor thresholds. |
+| `anomaly_config` | Global warning/danger thresholds by equipment type/model version. |
+| `tube_anomaly_result` | Tube inference scores and window timestamps. |
+| `motor_anomaly_result` | Motor inference scores, event type, and descriptions. |
+| `tube_anomaly_sensor_contribution` | Tube top contributing sensors for each result. |
+| `motor_anomaly_sensor_contribution` | Motor top contributing sensors for each result. |
+| `inference_checkpoint` | Last processed replay window for each worker/equipment. |
+| `alert_history` | Slack send status and alert metadata. |
+| `users` | Login users. |
+| `refresh_token` | JWT refresh token storage. |
 
----
+## ERD Summary
 
-## 5. 주요 테이블
+```mermaid
+erDiagram
+    plant ||--o{ equipment : owns
+    equipment ||--o{ tube_sensor_data : records
+    equipment ||--o{ motor_sensor_data : records
+    equipment ||--o{ tube_anomaly_result : produces
+    equipment ||--o{ motor_anomaly_result : produces
+    tube_anomaly_result ||--o{ tube_anomaly_sensor_contribution : explains
+    motor_anomaly_result ||--o{ motor_anomaly_sensor_contribution : explains
+    anomaly_config ||--o{ tube_anomaly_result : applies
+    anomaly_config ||--o{ motor_anomaly_result : applies
+    equipment ||--o{ tube_sensor_threshold : has
+    equipment ||--o{ motor_sensor_threshold : has
+    equipment ||--o{ inference_checkpoint : tracks
+    equipment ||--o{ alert_history : alerts
+    users ||--o{ refresh_token : owns
+```
 
-- plant: 발전소 정보
-- equipment: 설비 정보
-- motor_sensor_data: 고압전동기 센서 데이터
-- tube_sensor_data: IGCC 튜브 센서 데이터
-- anomaly_config: 이상 판단 기준
-- motor_anomaly_result: 고압전동기 이상 탐지 결과
-- tube_anomaly_result: 튜브 이상 탐지 결과
-- alert_history: 알림 전송 이력
-- motor_anomaly_sensor_contribution: 모터 이상 원인 후보 센서
-- tube_anomaly_sensor_contribution: 튜브 이상 원인 후보 센서
+## Inference Reset
 
----
+Use this when you want to keep the raw source data but replay the AI workers from the beginning.
 
-## 6. 주의사항
+```sql
+TRUNCATE TABLE
+    tube_anomaly_sensor_contribution,
+    motor_anomaly_sensor_contribution,
+    alert_history,
+    tube_anomaly_result,
+    motor_anomaly_result,
+    inference_checkpoint,
+    motor_sensor_threshold
+RESTART IDENTITY CASCADE;
+```
 
-- measured_at: 실제 센서 데이터가 측정된 시간
-- created_at: DB에 저장된 시간
-- alert_history.anomaly_result_id는 FK가 아닌 논리 참조 값
-- Python과 Spring Boot는 동일한 Docker PostgreSQL DB를 사용해야 함
-- 로컬 PostgreSQL이 켜져 있으면 Docker DB와 충돌할 수 있음
+This does not delete `tube_sensor_data`, `motor_sensor_data`, `plant`, `equipment`, users, or global configs.
+
+## Full Source Data Reload
+
+Use this only when you need to replace the raw CSV data itself.
+
+```powershell
+python ai\src\tube\db_loader.py
+python ai\src\tube\set_thresholds.py
+python ai\src\motor\load_real_15.py
+```
+
+The loaders clear their own source and derived tables for the relevant equipment type before inserting the new source data.
+
+## Notes
+
+- `measured_at` is the source timestamp used for charts and replay windows.
+- `created_at` is the database insert timestamp.
+- Python workers, Spring Boot, and React must point to the same PostgreSQL instance.
+- For AWS deployment, local worker terminals can target the EC2 database by setting `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD`.
+- `alert_history.anomaly_result_id` is intentionally stored with `anomaly_result_type` because alerts can reference either tube or motor result tables.

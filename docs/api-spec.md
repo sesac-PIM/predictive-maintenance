@@ -1,147 +1,171 @@
 # API Specification
 
-## Base URL
+Base URL: `/api`
 
-/api
+대부분의 조회 API는 JWT access token을 요구합니다. 인증이 필요한 요청에는 `Authorization: Bearer {accessToken}` 헤더를 포함합니다.
 
----
+## Auth
 
-## 1. 설비 전체 조회
+### POST `/auth/signup`
 
-Request  
-GET /equipments  
+회원 가입.
 
-Response  
+Request:
 
-[
-  {
-    "equipmentId": 1,
-    "plantName": "IGCC 발전소",
-    "equipmentName": "고압전동기 A",
-    "equipmentType": "MOTOR",
-    "status": "NORMAL"
-  }
-]
-
----
-
-## 2. 설비 상세 조회
-
-Request  
-GET /equipments/{equipmentId}  
-
-Response  
-
+```json
 {
-  "equipmentId": 1,
-  "plantName": "IGCC 발전소",
-  "equipmentName": "고압전동기 A",
-  "equipmentType": "MOTOR",
-  "status": "NORMAL",
-  "statusUpdatedAt": "2026-04-28T21:00:00"
+  "username": "admin",
+  "password": "1234",
+  "role": "ROLE_ADMIN"
 }
+```
 
----
+Response:
 
-## 3. 설비 상태 요약 조회
+```text
+Signup success
+```
 
-Request  
-GET /equipments/summary  
+### POST `/auth/login`
 
-Response  
+로그인 및 토큰 발급.
 
+Request:
+
+```json
 {
-  "totalCount": 2,
-  "normalCount": 1,
-  "warningCount": 0,
-  "dangerCount": 1
+  "username": "admin",
+  "password": "1234"
 }
+```
 
----
+Response:
 
-## 4. 센서 데이터 조회
+```json
+{
+  "accessToken": "...",
+  "refreshToken": "..."
+}
+```
 
-Request  
-GET /equipments/{equipmentId}/sensor-data  
+### POST `/auth/refresh`
 
-Response  
+refresh token으로 access token 재발급.
 
+Request:
+
+```json
+{
+  "refreshToken": "..."
+}
+```
+
+## Plants
+
+### GET `/plants`
+
+발전본부 목록 조회.
+
+Response:
+
+```json
 [
   {
-    "measuredAt": "2026-04-28T10:00:00",
-    "ii1211a": 12.3,
-    "tt1228a": 45.1
+    "plantId": 1,
+    "plantName": "태안발전본부",
+    "location": "충청남도 태안군 원북면 발전로 457",
+    "latitude": 36.912,
+    "longitude": 126.231,
+    "generationCount": 11
   }
 ]
+```
 
-※ equipmentType에 따라 motor_sensor_data 또는 tube_sensor_data 반환
+## Equipments
 
----
+### GET `/equipments?plantId={plantId}`
 
-## 5. 이상 탐지 결과 조회
+설비 목록 조회. `plantId`를 생략하면 전체 설비를 조회합니다.
 
-Request  
-GET /equipments/{equipmentId}/anomalies  
+### GET `/equipments/summary`
 
-Response  
+설비 상태 요약 조회.
 
+### GET `/equipments/{equipmentId}`
+
+설비 상세 조회.
+
+### GET `/equipments/{equipmentId}/sensor-data?limit={limit}`
+
+설비 타입에 따라 최신 센서 데이터를 조회합니다.
+
+- `equipment_type = MOTOR`: `motor_sensor_data`
+- `equipment_type = TUBE`: `tube_sensor_data`
+
+### GET `/equipments/{equipmentId}/sensor-thresholds`
+
+설비 타입에 따라 동적 센서 임계값을 조회합니다.
+
+- `equipment_type = MOTOR`: `motor_sensor_threshold`
+- `equipment_type = TUBE`: `tube_sensor_threshold`
+
+### GET `/equipments/{equipmentId}/anomalies?component={component}&limit={limit}`
+
+이상 탐지 결과를 조회합니다.
+
+Parameters:
+
+| Name | Required | Description |
+| --- | --- | --- |
+| `component` | No | 고압전동기 컴포넌트 필터. 예: `MAC_A`, `MAC_B`, `BAC`, `DGAN`, `VHP` |
+| `limit` | No | 조회 개수 |
+
+### GET `/equipments/{equipmentId}/anomalies/{anomalyResultId}/contributions`
+
+선택한 이상 결과의 센서별 기여도 조회.
+
+Response:
+
+```json
 [
   {
-    "anomalyResultId": 1,
-    "measuredAt": "2026-04-28T10:00:00",
-    "anomalyScore": 0.87,
-    "severity": "DANGER"
-  }
-]
-
-※ severity는 anomaly_config 기준으로 계산된 값
-
----
-
-## 6. 이상 원인 센서 조회
-
-Request  
-GET /api/anomalies/{type}/{anomalyId}/contributions  
-
-Path Variable  
-type: motor | tube  
-
-Response  
-
-[
-  {
-    "sensorName": "ii1211a",
-    "sensorValue": 12.3,
-    "contributionScore": 0.7,
+    "sensorTag": "ii1211a",
+    "sensorName": "MAC_A 전류",
+    "sensorValue": 842.79,
+    "contributionScore": 0.62,
     "contributionRank": 1
   }
 ]
+```
 
----
+## Alerts
 
-## 7. 알림 이력 조회
+### GET `/alerts`
 
-Request  
-GET /alerts  
+Slack 알림 이력 조회.
 
-Response  
+Parameters:
 
-[
-  {
-    "alertId": 1,
-    "equipmentId": 1,
-    "severity": "DANGER",
-    "message": "모터 이상 감지",
-    "occurredAt": "2026-04-28T10:00:00"
-  }
-]
+| Name | Required | Description |
+| --- | --- | --- |
+| `equipmentId` | No | 설비 ID |
+| `severity` | No | `NORMAL`, `WARNING`, `DANGER` |
+| `type` | No | `MOTOR`, `TUBE` |
+| `limit` | No | 조회 개수 |
+| `sort` | No | 정렬 방향 |
 
----
+### POST `/alerts/motor/{anomalyResultId}/send`
 
-## 설계 기준
+모터 이상 결과에 대한 Slack 알림 수동 전송.
 
-- RESTful 구조 기반  
-- 리소스 중심 URL 설계  
-- equipment를 기준으로 하위 리소스 구성  
-- sensor-data / anomalies는 설비 하위 리소스  
-- contribution은 anomaly 하위 리소스  
+### POST `/alerts/tube/{anomalyResultId}/send`
+
+튜브 이상 결과에 대한 Slack 알림 수동 전송.
+
+## Realtime Events
+
+### GET `/events/stream`
+
+SSE 이벤트 스트림 구독.
+
+Frontend는 이 스트림을 통해 신규 이상 결과 및 알림 이벤트를 감지하고 필요한 API만 다시 조회합니다.
