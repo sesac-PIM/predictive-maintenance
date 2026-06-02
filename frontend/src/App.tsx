@@ -383,6 +383,14 @@ function pickHighestSeverity(severities: Array<string | undefined>) {
   }, 'NORMAL');
 }
 
+function anomalySeverityForEquipment(anomaly: ApiAnomaly | undefined, equipmentType?: string) {
+  if (!anomaly) return 'NORMAL';
+  return pickHighestSeverity([
+    anomaly.severity,
+    severityFromEquipmentScore(anomaly.anomalyScore, equipmentType),
+  ]);
+}
+
 function pickMostSevereAnomaly(items: ApiAnomaly[]) {
   return items.reduce<ApiAnomaly | undefined>((best, item) => {
     if (!best) return item;
@@ -1224,7 +1232,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         const equipment = equipmentById.get(Number(equipmentId));
         if (!equipment) return [];
         return anomalies
-          .filter(anomaly => severityRank(anomaly.severity) > 0)
+          .filter(anomaly => severityRank(anomalySeverityForEquipment(anomaly, equipment.equipmentType)) > 0)
           .map(anomaly => ({
             equipmentId: equipment.equipmentId,
             anomalyResultId: anomaly.anomalyResultId,
@@ -1274,8 +1282,14 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
     const motorAnomaly = motorEquipment ? latestAnomalies[motorEquipment.equipmentId] : undefined;
     const gasifierScore = gasifierAnomaly?.anomalyScore;
     const motorScore = motorAnomaly?.anomalyScore;
-    const gasifierSeverity = severityFromEquipmentScore(gasifierScore, 'TUBE', gasifierAnomaly?.severity || gasifierEquipment?.status);
-    const motorSeverity = severityFromEquipmentScore(motorScore, 'MOTOR', motorAnomaly?.severity || motorEquipment?.status);
+    const gasifierSeverity = pickHighestSeverity([
+      gasifierEquipment?.status,
+      anomalySeverityForEquipment(gasifierAnomaly, 'TUBE'),
+    ]);
+    const motorSeverity = pickHighestSeverity([
+      motorEquipment?.status,
+      anomalySeverityForEquipment(motorAnomaly, 'MOTOR'),
+    ]);
     const scores = [gasifierScore, motorScore].filter((n): n is number => typeof n === 'number');
     const score = scores.length ? Math.max(...scores) : undefined;
     const severity = pickHighestSeverity([
@@ -1318,15 +1332,11 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         const type = (equipment.equipmentType || '').toUpperCase() === 'MOTOR' ? 'motor' : 'gasifier';
 
         return anomalies
-          .filter(anomaly => severityRank(anomaly.severity) > 0)
+          .filter(anomaly => severityRank(anomalySeverityForEquipment(anomaly, equipment.equipmentType)) > 0)
           .map(anomaly => {
             const targetKey = anomalyTargetKey(equipment, anomaly);
             const part = type === 'motor' ? (anomaly.componentName || '고압전동기').replace(/_/g, ' ') : '가스화기';
-            const severity = severityFromEquipmentScore(
-              anomaly.anomalyScore,
-              equipment.equipmentType,
-              anomaly.severity,
-            );
+            const severity = anomalySeverityForEquipment(anomaly, equipment.equipmentType);
             const status = severityToStatus(severity);
             const statusLabel = (STATUS_LEVELS as any)[status]?.label || '';
             const alerts = (alertsByTarget.get(targetKey) || []).map(alert => ({
