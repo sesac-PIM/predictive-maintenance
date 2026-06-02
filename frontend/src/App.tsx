@@ -9,7 +9,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineCh
 
 const TREND_VISIBLE_POINTS = 10;
 const TUBE_TREND_Y_MAX = 0.6;
-const SUMMARY_ANOMALY_LIMIT = 1;
+const SUMMARY_ANOMALY_LIMIT = 20;
 const DETAIL_ANOMALY_LIMIT = 300;
 const SENSOR_DATA_LIMIT = 300;
 const ALERT_LIST_LIMIT = 100;
