@@ -4,6 +4,11 @@ KOWEPO-EMS는 한국서부발전 발전 설비의 센서 데이터를 기반으�
 
 튜브와 고압전동기 데이터를 PostgreSQL에 적재한 뒤 Python AI Worker가 윈도우 단위로 이상 점수를 계산합니다. Spring Boot 백엔드는 센서 데이터, 추론 결과, 알림 이력을 API와 SSE로 제공하고, React 대시보드는 발전본부/호기/설비 단위로 상태를 시각화합니다.
 
+## Service URL
+
+- Deployed Frontend: [http://15.165.142.93](http://15.165.142.93)
+- Local Frontend: `http://localhost:3000`
+
 ## Key Features
 
 - 발전본부별 설비 현황: 태안, 평택, 서인천, 군산, 김포 발전본부의 설비 상태와 위치 시각화
@@ -504,22 +509,5 @@ python ai\src\motor\worker.py
 | Motor component view | MAC A 탭에서 MAC B, BAC 등 다른 부품의 이벤트와 기여도가 함께 표시됨 | 모터 결과가 equipment 기준으로만 조회되고 component 기준 필터가 충분히 적용되지 않음 | Backend anomaly 조회에 component 필터를 반영하고, Frontend도 현재 선택된 motor group의 센서/기여도만 표시하도록 정리 |
 | STOP state handling | 전류가 음수이거나 가동 임계치 이하인데도 정상/이상 점수로 해석됨 | 센서 노이즈와 정지 상태를 AI 이상 점수와 같은 방식으로 처리함 | Python worker에서 정지 구간은 `STOP` 이벤트와 score `0`으로 저장하고, Frontend에서는 전류 표시를 `0` 이상으로 보정하며 STOP 이벤트를 운전 상태 변화에 우선 반영 |
 | Alert processing | 같은 위험 상태가 반복적으로 Slack 알림으로 전송됨 | worker가 매 window마다 결과를 insert하므로 scheduler가 모든 결과를 신규 알림 대상으로 볼 수 있음 | `alert_processed`와 `alert_history`를 사용하고, equipment/type별 이전 severity와 달라질 때만 Slack을 전송 |
-| Replay reset | 시연을 처음부터 다시 보고 싶을 때 원천 데이터까지 지워야 하는지 혼란 | 원천 센서 데이터와 추론 결과/checkpoint의 역할이 분리되어 있음 | source table은 유지하고 `anomaly_result`, `contribution`, `alert_history`, `inference_checkpoint`, `motor_sensor_threshold`만 초기화해 같은 원천 데이터로 재시뮬레이션 |
 | Trend chart scrolling | 결과가 쌓일 때 차트가 최신으로 튀거나, 스크롤 중 그래프가 흔들리고 축이 사라지는 것처럼 보임 | 전체 데이터를 한 번에 렌더링하면서 브라우저 기본 스크롤과 차트 내부 scale 계산이 섞임 | 차트에는 최신 또는 선택 구간의 10개 point만 렌더링하고, 별도 scroll state로 window range를 이동. 사용자가 최신 구간을 보고 있을 때만 새 데이터에 자동 추적 |
 | Realtime update cost | 짧은 polling 주기에서 API 호출이 많아지고 화면이 깜빡임 | 화면 전체를 주기적으로 재조회하면 변경이 없는 데이터까지 계속 다시 그림 | SSE는 데이터 변경 신호만 전달하고, Frontend는 현재 화면에 필요한 API만 refetch하며 이전 데이터를 유지한 채 다음 데이터를 반영 |
-
-## Reset Inference Results Only
-
-원천 데이터는 유지하고 추론 결과만 처음부터 다시 보고 싶을 때 사용합니다.
-
-```sql
-TRUNCATE TABLE
-    tube_anomaly_sensor_contribution,
-    motor_anomaly_sensor_contribution,
-    alert_history,
-    tube_anomaly_result,
-    motor_anomaly_result,
-    inference_checkpoint,
-    motor_sensor_threshold
-RESTART IDENTITY CASCADE;
-```
