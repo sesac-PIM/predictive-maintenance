@@ -4,6 +4,11 @@ KOWEPO-EMS는 한국서부발전 발전 설비의 센서 데이터를 기반으�
 
 튜브와 고압전동기 데이터를 PostgreSQL에 적재한 뒤 Python AI Worker가 윈도우 단위로 이상 점수를 계산합니다. Spring Boot 백엔드는 센서 데이터, 추론 결과, 알림 이력을 API와 SSE로 제공하고, React 대시보드는 발전본부/호기/설비 단위로 상태를 시각화합니다.
 
+## Service URL
+
+- Deployed Frontend: [http://15.165.142.93](http://15.165.142.93)
+- Local Frontend: `http://localhost:3000`
+
 ## Key Features
 
 - 발전본부별 설비 현황: 태안, 평택, 서인천, 군산, 김포 발전본부의 설비 상태와 위치 시각화
@@ -97,11 +102,18 @@ flowchart LR
 
 ## ERD
 
+현재 ERD는 `init.sql` 기준 DB 스키마를 반영합니다. 이상 탐지 결과는 센서 원천 데이터의 시간 윈도우를
+기반으로 생성되며, `alert_history.anomaly_result_id`는 모터/튜브 결과 테이블을 공통으로 가리키는
+논리 참조입니다.
+
 ```mermaid
 erDiagram
     plant ||--o{ equipment : has
+    users ||--o{ refresh_token : owns
     equipment ||--o{ motor_sensor_data : records
     equipment ||--o{ tube_sensor_data : records
+    equipment ||--o{ motor_sensor_threshold : thresholds
+    equipment ||--o{ tube_sensor_threshold : thresholds
     equipment ||--o{ motor_anomaly_result : produces
     equipment ||--o{ tube_anomaly_result : produces
     equipment ||--o{ inference_checkpoint : tracks
@@ -112,7 +124,6 @@ erDiagram
     anomaly_config ||--o{ tube_sensor_threshold : configures
     motor_anomaly_result ||--o{ motor_anomaly_sensor_contribution : explains
     tube_anomaly_result ||--o{ tube_anomaly_sensor_contribution : explains
-    users ||--o{ refresh_token : owns
 
     plant {
       bigint plant_id PK
@@ -121,6 +132,24 @@ erDiagram
       double latitude
       double longitude
       int generation_count
+      timestamp created_at
+    }
+
+    users {
+      bigint user_id PK
+      varchar username
+      varchar password
+      varchar role
+      timestamp created_at
+    }
+
+    refresh_token {
+      bigint refresh_token_id PK
+      bigint user_id FK
+      varchar token
+      timestamp expires_at
+      boolean revoked
+      timestamp created_at
     }
 
     equipment {
@@ -130,6 +159,65 @@ erDiagram
       int unit_no
       varchar equipment_type
       varchar status
+      timestamp status_updated_at
+      varchar description
+      timestamp created_at
+    }
+
+    motor_sensor_data {
+      bigint motor_sensor_data_id PK
+      bigint equipment_id FK
+      timestamp measured_at
+      double ii1211a
+      double tt1228a
+      double yi1593aa
+      double tt1227a
+      double yi1593ab
+      double yi1594aa
+      double yi1594ab
+      double ii1211b
+      double tt1228b
+      double yi1593ba
+      double tt1227b
+      double yi1593bb
+      double yi1594ba
+      double yi1594bb
+      double ii1442
+      double tt1427
+      double yi1483a
+      double tt1428
+      double yi1483b
+      double yi1484a
+      double yi1484b
+      double ii7140
+      double tt7111
+      double yi7364a
+      double tt7100
+      double yi7364b
+      double yi7365a
+      double yi7365b
+      double ii7145
+      double tt7152
+      double yi7358a
+      double tt7151
+      double yi7358b
+      double yi7359a
+      double yi7359b
+    }
+
+    tube_sensor_data {
+      bigint tube_sensor_data_id PK
+      bigint equipment_id FK
+      timestamp measured_at
+      double tag_13tt0064
+      double tag_15pdt0002a
+      double tag_13pdt0067
+      double tag_13fi0044
+      double tag_13ffyc0046
+      double tag_13fy0045
+      double tag_13jyi9001
+      double tag_10ind0001
+      double bopc1_1_16200_fi_po041
     }
 
     anomaly_config {
@@ -139,6 +227,31 @@ erDiagram
       double warning_threshold
       double danger_threshold
       boolean is_active
+      timestamp created_at
+    }
+
+    motor_sensor_threshold {
+      bigint motor_sensor_threshold_id PK
+      bigint equipment_id FK
+      bigint config_id FK
+      varchar sensor_tag
+      timestamp window_start_at
+      timestamp window_end_at
+      double lower_threshold
+      double upper_threshold
+      timestamp created_at
+    }
+
+    tube_sensor_threshold {
+      bigint tube_sensor_threshold_id PK
+      bigint equipment_id FK
+      bigint config_id FK
+      varchar sensor_tag
+      timestamp window_start_at
+      timestamp window_end_at
+      double lower_threshold
+      double upper_threshold
+      timestamp created_at
     }
 
     motor_anomaly_result {
@@ -148,9 +261,13 @@ erDiagram
       varchar component_name
       timestamp window_start_at
       timestamp window_end_at
+      timestamp measured_at
       double anomaly_score
       varchar event_type
+      int duration_sec
+      text description
       boolean alert_processed
+      timestamp created_at
     }
 
     tube_anomaly_result {
@@ -159,8 +276,19 @@ erDiagram
       bigint config_id FK
       timestamp window_start_at
       timestamp window_end_at
+      timestamp measured_at
       double anomaly_score
       boolean alert_processed
+      timestamp created_at
+    }
+
+    inference_checkpoint {
+      bigint checkpoint_id PK
+      bigint equipment_id FK
+      varchar equipment_type
+      varchar model_version
+      timestamp last_processed_at
+      timestamp updated_at
     }
 
     alert_history {
@@ -168,9 +296,32 @@ erDiagram
       bigint equipment_id FK
       bigint anomaly_result_id
       varchar anomaly_result_type
+      timestamp occurred_at
       varchar severity
+      varchar message
       varchar channel
       varchar send_status
+      timestamp created_at
+    }
+
+    motor_anomaly_sensor_contribution {
+      bigint motor_contribution_id PK
+      bigint motor_anomaly_result_id FK
+      varchar sensor_tag
+      double sensor_value
+      double contribution_score
+      int contribution_rank
+      timestamp created_at
+    }
+
+    tube_anomaly_sensor_contribution {
+      bigint tube_contribution_id PK
+      bigint tube_anomaly_result_id FK
+      varchar sensor_tag
+      double sensor_value
+      double contribution_score
+      int contribution_rank
+      timestamp created_at
     }
 ```
 
@@ -358,22 +509,5 @@ python ai\src\motor\worker.py
 | Motor component view | MAC A 탭에서 MAC B, BAC 등 다른 부품의 이벤트와 기여도가 함께 표시됨 | 모터 결과가 equipment 기준으로만 조회되고 component 기준 필터가 충분히 적용되지 않음 | Backend anomaly 조회에 component 필터를 반영하고, Frontend도 현재 선택된 motor group의 센서/기여도만 표시하도록 정리 |
 | STOP state handling | 전류가 음수이거나 가동 임계치 이하인데도 정상/이상 점수로 해석됨 | 센서 노이즈와 정지 상태를 AI 이상 점수와 같은 방식으로 처리함 | Python worker에서 정지 구간은 `STOP` 이벤트와 score `0`으로 저장하고, Frontend에서는 전류 표시를 `0` 이상으로 보정하며 STOP 이벤트를 운전 상태 변화에 우선 반영 |
 | Alert processing | 같은 위험 상태가 반복적으로 Slack 알림으로 전송됨 | worker가 매 window마다 결과를 insert하므로 scheduler가 모든 결과를 신규 알림 대상으로 볼 수 있음 | `alert_processed`와 `alert_history`를 사용하고, equipment/type별 이전 severity와 달라질 때만 Slack을 전송 |
-| Replay reset | 시연을 처음부터 다시 보고 싶을 때 원천 데이터까지 지워야 하는지 혼란 | 원천 센서 데이터와 추론 결과/checkpoint의 역할이 분리되어 있음 | source table은 유지하고 `anomaly_result`, `contribution`, `alert_history`, `inference_checkpoint`, `motor_sensor_threshold`만 초기화해 같은 원천 데이터로 재시뮬레이션 |
 | Trend chart scrolling | 결과가 쌓일 때 차트가 최신으로 튀거나, 스크롤 중 그래프가 흔들리고 축이 사라지는 것처럼 보임 | 전체 데이터를 한 번에 렌더링하면서 브라우저 기본 스크롤과 차트 내부 scale 계산이 섞임 | 차트에는 최신 또는 선택 구간의 10개 point만 렌더링하고, 별도 scroll state로 window range를 이동. 사용자가 최신 구간을 보고 있을 때만 새 데이터에 자동 추적 |
 | Realtime update cost | 짧은 polling 주기에서 API 호출이 많아지고 화면이 깜빡임 | 화면 전체를 주기적으로 재조회하면 변경이 없는 데이터까지 계속 다시 그림 | SSE는 데이터 변경 신호만 전달하고, Frontend는 현재 화면에 필요한 API만 refetch하며 이전 데이터를 유지한 채 다음 데이터를 반영 |
-
-## Reset Inference Results Only
-
-원천 데이터는 유지하고 추론 결과만 처음부터 다시 보고 싶을 때 사용합니다.
-
-```sql
-TRUNCATE TABLE
-    tube_anomaly_sensor_contribution,
-    motor_anomaly_sensor_contribution,
-    alert_history,
-    tube_anomaly_result,
-    motor_anomaly_result,
-    inference_checkpoint,
-    motor_sensor_threshold
-RESTART IDENTITY CASCADE;
-```
