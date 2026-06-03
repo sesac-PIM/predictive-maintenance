@@ -97,11 +97,18 @@ flowchart LR
 
 ## ERD
 
+현재 ERD는 `init.sql` 기준 DB 스키마를 반영합니다. 이상 탐지 결과는 센서 원천 데이터의 시간 윈도우를
+기반으로 생성되며, `alert_history.anomaly_result_id`는 모터/튜브 결과 테이블을 공통으로 가리키는
+논리 참조입니다.
+
 ```mermaid
 erDiagram
     plant ||--o{ equipment : has
+    users ||--o{ refresh_token : owns
     equipment ||--o{ motor_sensor_data : records
     equipment ||--o{ tube_sensor_data : records
+    equipment ||--o{ motor_sensor_threshold : thresholds
+    equipment ||--o{ tube_sensor_threshold : thresholds
     equipment ||--o{ motor_anomaly_result : produces
     equipment ||--o{ tube_anomaly_result : produces
     equipment ||--o{ inference_checkpoint : tracks
@@ -112,7 +119,6 @@ erDiagram
     anomaly_config ||--o{ tube_sensor_threshold : configures
     motor_anomaly_result ||--o{ motor_anomaly_sensor_contribution : explains
     tube_anomaly_result ||--o{ tube_anomaly_sensor_contribution : explains
-    users ||--o{ refresh_token : owns
 
     plant {
       bigint plant_id PK
@@ -121,6 +127,24 @@ erDiagram
       double latitude
       double longitude
       int generation_count
+      timestamp created_at
+    }
+
+    users {
+      bigint user_id PK
+      varchar username
+      varchar password
+      varchar role
+      timestamp created_at
+    }
+
+    refresh_token {
+      bigint refresh_token_id PK
+      bigint user_id FK
+      varchar token
+      timestamp expires_at
+      boolean revoked
+      timestamp created_at
     }
 
     equipment {
@@ -130,6 +154,65 @@ erDiagram
       int unit_no
       varchar equipment_type
       varchar status
+      timestamp status_updated_at
+      varchar description
+      timestamp created_at
+    }
+
+    motor_sensor_data {
+      bigint motor_sensor_data_id PK
+      bigint equipment_id FK
+      timestamp measured_at
+      double ii1211a
+      double tt1228a
+      double yi1593aa
+      double tt1227a
+      double yi1593ab
+      double yi1594aa
+      double yi1594ab
+      double ii1211b
+      double tt1228b
+      double yi1593ba
+      double tt1227b
+      double yi1593bb
+      double yi1594ba
+      double yi1594bb
+      double ii1442
+      double tt1427
+      double yi1483a
+      double tt1428
+      double yi1483b
+      double yi1484a
+      double yi1484b
+      double ii7140
+      double tt7111
+      double yi7364a
+      double tt7100
+      double yi7364b
+      double yi7365a
+      double yi7365b
+      double ii7145
+      double tt7152
+      double yi7358a
+      double tt7151
+      double yi7358b
+      double yi7359a
+      double yi7359b
+    }
+
+    tube_sensor_data {
+      bigint tube_sensor_data_id PK
+      bigint equipment_id FK
+      timestamp measured_at
+      double tag_13tt0064
+      double tag_15pdt0002a
+      double tag_13pdt0067
+      double tag_13fi0044
+      double tag_13ffyc0046
+      double tag_13fy0045
+      double tag_13jyi9001
+      double tag_10ind0001
+      double bopc1_1_16200_fi_po041
     }
 
     anomaly_config {
@@ -139,6 +222,31 @@ erDiagram
       double warning_threshold
       double danger_threshold
       boolean is_active
+      timestamp created_at
+    }
+
+    motor_sensor_threshold {
+      bigint motor_sensor_threshold_id PK
+      bigint equipment_id FK
+      bigint config_id FK
+      varchar sensor_tag
+      timestamp window_start_at
+      timestamp window_end_at
+      double lower_threshold
+      double upper_threshold
+      timestamp created_at
+    }
+
+    tube_sensor_threshold {
+      bigint tube_sensor_threshold_id PK
+      bigint equipment_id FK
+      bigint config_id FK
+      varchar sensor_tag
+      timestamp window_start_at
+      timestamp window_end_at
+      double lower_threshold
+      double upper_threshold
+      timestamp created_at
     }
 
     motor_anomaly_result {
@@ -148,9 +256,13 @@ erDiagram
       varchar component_name
       timestamp window_start_at
       timestamp window_end_at
+      timestamp measured_at
       double anomaly_score
       varchar event_type
+      int duration_sec
+      text description
       boolean alert_processed
+      timestamp created_at
     }
 
     tube_anomaly_result {
@@ -159,8 +271,19 @@ erDiagram
       bigint config_id FK
       timestamp window_start_at
       timestamp window_end_at
+      timestamp measured_at
       double anomaly_score
       boolean alert_processed
+      timestamp created_at
+    }
+
+    inference_checkpoint {
+      bigint checkpoint_id PK
+      bigint equipment_id FK
+      varchar equipment_type
+      varchar model_version
+      timestamp last_processed_at
+      timestamp updated_at
     }
 
     alert_history {
@@ -168,9 +291,32 @@ erDiagram
       bigint equipment_id FK
       bigint anomaly_result_id
       varchar anomaly_result_type
+      timestamp occurred_at
       varchar severity
+      varchar message
       varchar channel
       varchar send_status
+      timestamp created_at
+    }
+
+    motor_anomaly_sensor_contribution {
+      bigint motor_contribution_id PK
+      bigint motor_anomaly_result_id FK
+      varchar sensor_tag
+      double sensor_value
+      double contribution_score
+      int contribution_rank
+      timestamp created_at
+    }
+
+    tube_anomaly_sensor_contribution {
+      bigint tube_contribution_id PK
+      bigint tube_anomaly_result_id FK
+      varchar sensor_tag
+      double sensor_value
+      double contribution_score
+      int contribution_rank
+      timestamp created_at
     }
 ```
 
