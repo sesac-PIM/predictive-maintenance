@@ -15,6 +15,18 @@ const SENSOR_DATA_LIMIT = 300;
 const ALERT_LIST_LIMIT = 100;
 const ALERT_DROPDOWN_LIMIT = 5;
 
+const KST_CLOCK_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+  hourCycle: 'h23',
+});
+
 const STATUS_LEVELS = {
   danger: { label: '위험', color: 'bg-red-500' },
   warning: { label: '주의', color: 'bg-orange-500' },
@@ -315,6 +327,31 @@ function formatCompactApiTime(value?: string) {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
   return `${year}.${month}.${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function formatKstClock(date = new Date()) {
+  const parts = KST_CLOCK_FORMATTER.formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${parts.year}.${parts.month}.${parts.day} ${parts.hour}:${parts.minute}:${parts.second} KST`;
+}
+
+function useKstClock() {
+  const [clock, setClock] = useState(() => formatKstClock());
+
+  useEffect(() => {
+    const tick = () => setClock(formatKstClock());
+    tick();
+    const timerId = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timerId);
+  }, []);
+
+  return clock;
+}
+
+function KstClock({ className }: { className: string }) {
+  return <span className={className}>{useKstClock()}</span>;
 }
 
 function hasBrokenText(value?: string) {
@@ -986,7 +1023,7 @@ const DashboardPage = ({ onNavigateToDetail }: { onNavigateToDetail: (plantId: s
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <span className="font-data-lg text-title-sm text-primary">2024.05.22 14:30:45 KST</span>
+            <KstClock className="font-data-lg text-title-sm text-primary" />
           </div>
 <HeaderActions />
         </div>
@@ -1476,7 +1513,7 @@ const PlantDetailPage = ({ plantId, initialMenu = 'generators', onBack, onSwitch
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <span className="font-data-lg text-title-sm text-primary">2024.05.22 14:30:45 KST</span>
+            <KstClock className="font-data-lg text-title-sm text-primary" />
           </div>
 <HeaderActions />
         </div>
@@ -2238,7 +2275,7 @@ const OperationalStateDashboard = ({ plantId, initialGenId = 1, initialComp = 'm
           </div>
         </div>
         <div className="flex items-center gap-6">
-          <span className="font-data-lg text-title-sm text-[#38bdf8]">2024.05.22 14:30:45 KST</span>
+          <KstClock className="font-data-lg text-title-sm text-[#38bdf8]" />
           <HeaderActions />
         </div>
       </header>
